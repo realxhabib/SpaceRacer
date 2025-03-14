@@ -348,7 +348,6 @@ class Player {
     
     activateBoost() {
         this.boosting = true;
-        this.game.activateHyperspeed();
         
         // No longer applying the spin effect when boosting
         // Original code called: this.performBoostSpinEffect();
@@ -396,7 +395,6 @@ class Player {
     
     deactivateBoost() {
         this.boosting = false;
-        this.game.deactivateHyperspeed();
     }
     
     fireBullet() {

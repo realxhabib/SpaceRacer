@@ -93,8 +93,25 @@ class PowerUpsManager {
         
         powerUp.position.set(x, y, z);
         
-        // Set scale
-        powerUp.scale.set(5.0, 5.0, 5.0);
+        // Set scale - increased from 5.0 to 8.0 to make the box bigger
+        powerUp.scale.set(8.0, 8.0, 8.0);
+        
+        // Make the mystery box partially transparent
+        powerUp.traverse(child => {
+            if (child.isMesh && child.material) {
+                // If material is an array, process each material
+                if (Array.isArray(child.material)) {
+                    child.material.forEach(material => {
+                        material.transparent = true;
+                        material.opacity = 0.7; // 70% opaque
+                    });
+                } else {
+                    // Single material
+                    child.material.transparent = true;
+                    child.material.opacity = 0.7; // 70% opaque
+                }
+            }
+        });
         
         // Assign random power-up type
         powerUp.powerUpType = this.powerUpTypes[getRandomInt(0, this.powerUpTypes.length - 1)];

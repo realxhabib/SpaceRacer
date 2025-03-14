@@ -9,16 +9,16 @@ class AsteroidsManager {
         this.asteroidModel = null;
         this.spawnDistance = -1800;               // Increased from -1500 to spawn further ahead
         this.despawnDistance = 50;                // Keep the same
-        this.spawnInterval = 0.9;                 // Decreased from 1.0 to spawn more frequently
+        this.spawnInterval = 0.3;                 // Decreased from 0.9 to spawn much more frequently
         this.spawnTimer = 0;
-        this.spawnCount = 3;                      // Increased from 2 to create more asteroids
+        this.spawnCount = 10;                     // Increased from 3 to create many more asteroids at once
         this.minSpawnX = -40;                     // Wider spawn area
         this.maxSpawnX = 40;                      // Wider spawn area
         this.minSpawnY = -20;                     // Wider spawn area
         this.maxSpawnY = 20;                      // Wider spawn area
         this.damageAmount = 10;                   // Keep the same
         this.gameTime = 0;                        // Keep the same
-        this.maxAsteroids = 70;                   // Increased from 50 to allow more asteroids
+        this.maxAsteroids = 500;                  // Drastically increased from 70 to allow hundreds of asteroids
         this.trackingAsteroidChance = 0.1;        // Keep the same
         this.directPathChance = 0.2;              // Keep the same
         this.distanceCheckpoints = [500, 1000, 2000, 3000, 5000, 7500, 10000]; // Keep the same
@@ -30,6 +30,12 @@ class AsteroidsManager {
         this.boundarySpawnInterval = 1.5;         // Time between boundary asteroid spawns
         this.boundarySpawnTimer = 0;              // Timer for boundary asteroids
         this.boundaryAsteroids = [];              // Track boundary asteroids separately
+        
+        // Asteroid recycling properties
+        this.asteroidPool = [];                   // Pool of inactive asteroids for recycling
+        this.poolSize = 500;                      // Max size of the asteroid pool
+        this.recycleChunkSize = 20;               // Process recycling in chunks to avoid performance issues
+        this.lastRecycleTime = 0;                 // Track last recycle operation time
     }
 
     initialize() {
@@ -73,6 +79,9 @@ class AsteroidsManager {
         // Process all asteroids (regular and boundary)
         let allAsteroids = [...this.asteroids, ...this.boundaryAsteroids];
         
+        // Track recycled asteroids in this update cycle
+        let recycledCount = 0;
+        
         for (let i = allAsteroids.length - 1; i >= 0; i--) {
             const asteroid = allAsteroids[i];
             const isRegularAsteroid = i < this.asteroids.length;
@@ -107,9 +116,13 @@ class AsteroidsManager {
                 }
             }
             
-            // Check if asteroid is behind player and should be removed
+            // Check if asteroid is behind player and should be recycled
             if (asteroid.position.z > playerPosition.z + this.despawnDistance) {
-                this.game.scene.remove(asteroid);
+                // Instead of removing, recycle into the pool
+                this.recycleAsteroid(asteroid);
+                recycledCount++;
+                
+                // Remove from active arrays
                 if (isRegularAsteroid) {
                     this.asteroids.splice(i, 1);
                 } else {
@@ -141,8 +154,11 @@ class AsteroidsManager {
                 // Player takes damage
                 this.game.player.takeDamage(this.damageAmount);
                 
-                // Remove asteroid
-                this.game.scene.remove(asteroid);
+                // Recycle asteroid instead of just removing
+                this.recycleAsteroid(asteroid);
+                recycledCount++;
+                
+                // Remove from active arrays
                 if (isRegularAsteroid) {
                     this.asteroids.splice(i, 1);
                 } else {
@@ -162,8 +178,11 @@ class AsteroidsManager {
                     bullet.active = false;
                     bullet.mesh.visible = false;
                     
-                    // Remove asteroid
-                    this.game.scene.remove(asteroid);
+                    // Recycle asteroid instead of just removing
+                    this.recycleAsteroid(asteroid);
+                    recycledCount++;
+                    
+                    // Remove from active arrays
                     if (isRegularAsteroid) {
                         this.asteroids.splice(i, 1);
                     } else {
@@ -183,6 +202,11 @@ class AsteroidsManager {
             }
         }
         
+        // If recycled a significant number of asteroids, log for debugging
+        if (recycledCount > 10) {
+            console.log(`Recycled ${recycledCount} asteroids. Pool size: ${this.asteroidPool.length}`);
+        }
+        
         // Increase difficulty based on time AND distance
         this.updateDifficulty();
     }
@@ -195,23 +219,48 @@ class AsteroidsManager {
             return;
         }
         
-        for (let i = 0; i < this.spawnCount; i++) {
-            // Clone asteroid model
-            const asteroid = this.asteroidModel.clone();
-            asteroid.visible = true;
+        // Determine how many to spawn this cycle
+        const spawnTarget = Math.min(this.spawnCount, this.maxAsteroids - this.asteroids.length);
+        let spawnedCount = 0;
+        
+        for (let i = 0; i < spawnTarget; i++) {
+            let asteroid;
+            
+            // Try to reuse an asteroid from the pool first
+            if (this.asteroidPool.length > 0) {
+                // Use recycling in chunks to prevent performance issues
+                // Only recycle a specific number per frame unless pool is nearly full
+                const currentTime = performance.now();
+                const timeSinceLastRecycle = currentTime - this.lastRecycleTime;
+                const isPoolNearlyFull = this.asteroidPool.length > this.poolSize * 0.8;
+                
+                // Recycle if enough time has passed or pool is getting full
+                if (timeSinceLastRecycle > 500 || isPoolNearlyFull || spawnedCount < this.recycleChunkSize) {
+                    asteroid = this.asteroidPool.pop();
+                    asteroid.visible = true;
+                    this.lastRecycleTime = currentTime;
+                } else {
+                    // Skip recycling this frame to spread out the load
+                    continue;
+                }
+            } else {
+                // Create a new asteroid if pool is empty
+                asteroid = this.asteroidModel.clone();
+                asteroid.visible = true;
+            }
             
             // Determine spawn position
             let x, y, z;
             const spawnType = Math.random();
             
-            // Wider spawn area constant
-            const horizontalSpread = 60; // Increased from 30 for greater left-right spread
-            const verticalSpread = 25;  // Increased from 15 for greater up-down spread
+            // Wider spawn area constants - INCREASED for better distribution
+            const horizontalSpread = 100; // Increased from 60 for much greater left-right spread
+            const verticalSpread = 40;   // Increased from 25 for greater up-down spread
             
             if (spawnType < this.directPathChance) {
                 // Spawn directly in front of player's path, but with more variation
-                x = playerPosition.x + getRandomFloat(-12, 12); // Increased variation (was -3 to 3)
-                y = playerPosition.y + getRandomFloat(-8, 8);   // Increased variation (was -3 to 3)
+                x = playerPosition.x + getRandomFloat(-20, 20); // Increased from -12,12
+                y = playerPosition.y + getRandomFloat(-15, 15); // Increased from -8,8
                 z = playerPosition.z + this.spawnDistance * 0.7; // Closer than regular asteroids
             } else if (spawnType < this.directPathChance + 0.7) {
                 // Spawn ahead of player with MUCH wider distribution - 70% chance
@@ -230,30 +279,30 @@ class AsteroidsManager {
                     // Offset from pure edge for some variety
                     x += getRandomFloat(-horizontalSpread * 0.2, horizontalSpread * 0.2);
                 } else {
-                    // 40% in the whole field, still with much wider range
-                    x = getRandomFloat(-horizontalSpread, horizontalSpread);
+                    // 40% in the whole field, with much wider range
+                    x = playerPosition.x + getRandomFloat(-horizontalSpread, horizontalSpread);
                 }
                 
-                // Vertical position with less edge bias
-                y = getRandomFloat(-verticalSpread, verticalSpread);
+                // Vertical position with less edge bias but wider spread
+                y = playerPosition.y + getRandomFloat(-verticalSpread, verticalSpread);
                 z = playerPosition.z + this.spawnDistance;
             } else {
                 // Spawn in player area (new method) - remaining chance
                 // Random position around the player within a certain radius
-                const radius = getRandomFloat(20, 40); // Increased from 15-30
+                const radius = getRandomFloat(30, 60); // Increased from 20-40
                 const angle = getRandomFloat(0, Math.PI * 2);
                 
                 x = playerPosition.x + Math.cos(angle) * radius;
                 y = playerPosition.y + Math.sin(angle) * radius;
                 
                 // Spawn slightly ahead of player to give reaction time
-                z = playerPosition.z - getRandomFloat(10, 50);
+                z = playerPosition.z - getRandomFloat(10, 80); // Increased from 10-50
             }
             
             asteroid.position.set(x, y, z);
             
             // Random scale with more size variation for visual interest
-            const scale = getRandomFloat(0.015, 0.045); // Wider range (was 0.02-0.035)
+            const scale = getRandomFloat(0.015, 0.045); // Keep the same size scale
             asteroid.scale.set(scale, scale, scale);
             
             // Random rotation speed
@@ -266,11 +315,36 @@ class AsteroidsManager {
             // Movement speed with more variation
             asteroid.speed = getRandomFloat(8, 22); // Wider speed range (was 10-20)
             
-            // Add lateral movement with more sideways motion
+            // Add lateral movement with more sideways motion for greater spread over time
             asteroid.lateralMovement = {
-                x: getRandomFloat(-7, 7), // Increased from -5 to 5
-                y: getRandomFloat(-4, 4)  // Increased from -3 to 3
+                x: getRandomFloat(-10, 10), // Increased from -7,7
+                y: getRandomFloat(-6, 6)    // Increased from -4,4
             };
+            
+            // Make asteroids brighter by increasing material brightness
+            asteroid.traverse(child => {
+                if (child.isMesh && child.material) {
+                    // Clone to avoid affecting other asteroids
+                    child.material = child.material.clone();
+                    
+                    // Increase brightness for better visibility
+                    if (!child.material.emissive) {
+                        child.material.emissive = new THREE.Color(0x333333);
+                    } else {
+                        child.material.emissive.set(0x333333);
+                    }
+                    
+                    // Increase material color intensity
+                    if (child.material.color) {
+                        const color = child.material.color.clone();
+                        // Brighten the color (multiply RGB values while keeping them in valid range)
+                        color.r = Math.min(1.0, color.r * 1.3);
+                        color.g = Math.min(1.0, color.g * 1.3);
+                        color.b = Math.min(1.0, color.b * 1.3);
+                        child.material.color = color;
+                    }
+                }
+            });
             
             // Determine if this is a tracking asteroid (10% chance)
             asteroid.isTracking = Math.random() < this.trackingAsteroidChance;
@@ -280,11 +354,22 @@ class AsteroidsManager {
                 asteroid.speed *= 0.8;
                 asteroid.trackingStrength = 0.5; // How strongly it tracks the player (0.0 to 1.0)
                 
-                // Make tracking asteroids visually distinctive with a reddish tint
+                // Make tracking asteroids visually distinctive with a brighter reddish tint
                 asteroid.traverse(child => {
                     if (child.isMesh && child.material) {
                         child.material = child.material.clone(); // Clone material to avoid affecting other asteroids
-                        child.material.color.setHex(0xff4444); // Reddish color
+                        child.material.color.setHex(0xff6666); // Brighter reddish color
+                        child.material.emissive = new THREE.Color(0x331111); // Add red glow
+                    }
+                });
+            } else {
+                // Reset color for non-tracking asteroids (might be reused)
+                asteroid.traverse(child => {
+                    if (child.isMesh && child.material) {
+                        if (!asteroid.isTracking) {
+                            child.material = child.material.clone(); 
+                            child.material.color.setHex(0xffffff); // Default white color
+                        }
                     }
                 });
             }
@@ -292,6 +377,7 @@ class AsteroidsManager {
             // Add to scene and array
             this.game.scene.add(asteroid);
             this.asteroids.push(asteroid);
+            spawnedCount++;
             
             // Create hitbox for collision detection
             const boundingBox = new THREE.Box3().setFromObject(asteroid);
@@ -303,6 +389,11 @@ class AsteroidsManager {
                 height: size.y * 0.8,
                 depth: size.z * 0.8
             };
+        }
+        
+        // Log when we spawn a significant number of asteroids
+        if (spawnedCount > 5) {
+            console.log(`Spawned ${spawnedCount} asteroids. Total active: ${this.asteroids.length}, Pool size: ${this.asteroidPool.length}`);
         }
     }
 
@@ -499,11 +590,20 @@ class AsteroidsManager {
         
         // Calculate number to spawn based on density
         const count = Math.ceil(3 * this.boundaryDensity);
+        let spawnedCount = 0;
         
         for (let i = 0; i < count; i++) {
-            // Clone asteroid model
-            const asteroid = this.asteroidModel.clone();
-            asteroid.visible = true;
+            let asteroid;
+            
+            // Try to reuse an asteroid from the pool first
+            if (this.asteroidPool.length > 0) {
+                asteroid = this.asteroidPool.pop();
+                asteroid.visible = true;
+            } else {
+                // Create a new asteroid if pool is empty
+                asteroid = this.asteroidModel.clone();
+                asteroid.visible = true;
+            }
             
             // Determine which boundary to spawn on (top, bottom, left, right, or near z-axis)
             const boundaryType = Math.floor(Math.random() * 5);
@@ -512,67 +612,92 @@ class AsteroidsManager {
             let x, y, z;
             let lateralX = 0, lateralY = 0;
             
-            // Spawn distance for this asteroid
-            const dist = this.boundaryDistance * (0.9 + Math.random() * 0.3);
+            // Spawn distance for this asteroid - increased for better spread
+            const dist = this.boundaryDistance * (1.0 + Math.random() * 0.5); // Increased from 0.9 + 0.3
             
             switch (boundaryType) {
                 case 0: // Left boundary
                     x = playerPosition.x - dist;
-                    y = playerPosition.y + getRandomFloat(-dist/2, dist/2);
-                    z = playerPosition.z + getRandomFloat(-30, 0);
-                    lateralX = getRandomFloat(2, 5); // Move right (toward player)
+                    y = playerPosition.y + getRandomFloat(-dist/1.5, dist/1.5); // Increased vertical spread
+                    z = playerPosition.z + getRandomFloat(-50, 0); // Increased depth variation
+                    lateralX = getRandomFloat(3, 7); // Increased from 2-5, more speed toward player
                     break;
                     
                 case 1: // Right boundary
                     x = playerPosition.x + dist;
-                    y = playerPosition.y + getRandomFloat(-dist/2, dist/2);
-                    z = playerPosition.z + getRandomFloat(-30, 0);
-                    lateralX = getRandomFloat(-5, -2); // Move left (toward player)
+                    y = playerPosition.y + getRandomFloat(-dist/1.5, dist/1.5); // Increased vertical spread
+                    z = playerPosition.z + getRandomFloat(-50, 0); // Increased depth variation
+                    lateralX = getRandomFloat(-7, -3); // Increased from -5,-2, more speed toward player
                     break;
                     
                 case 2: // Top boundary
-                    x = playerPosition.x + getRandomFloat(-dist/2, dist/2);
+                    x = playerPosition.x + getRandomFloat(-dist/1.5, dist/1.5); // Increased horizontal spread
                     y = playerPosition.y + dist;
-                    z = playerPosition.z + getRandomFloat(-30, 0);
-                    lateralY = getRandomFloat(-5, -2); // Move down (toward player)
+                    z = playerPosition.z + getRandomFloat(-50, 0); // Increased depth variation
+                    lateralY = getRandomFloat(-7, -3); // Increased from -5,-2, more speed toward player
                     break;
                     
                 case 3: // Bottom boundary
-                    x = playerPosition.x + getRandomFloat(-dist/2, dist/2);
+                    x = playerPosition.x + getRandomFloat(-dist/1.5, dist/1.5); // Increased horizontal spread
                     y = playerPosition.y - dist;
-                    z = playerPosition.z + getRandomFloat(-30, 0);
-                    lateralY = getRandomFloat(2, 5); // Move up (toward player)
+                    z = playerPosition.z + getRandomFloat(-50, 0); // Increased depth variation
+                    lateralY = getRandomFloat(3, 7); // Increased from 2-5, more speed toward player
                     break;
                     
                 case 4: // Far ahead for extreme forward movement
-                    x = playerPosition.x + getRandomFloat(-20, 20);
-                    y = playerPosition.y + getRandomFloat(-20, 20);
-                    z = playerPosition.z - this.spawnDistance * 1.2;
+                    x = playerPosition.x + getRandomFloat(-35, 35); // Increased from -20,20
+                    y = playerPosition.y + getRandomFloat(-35, 35); // Increased from -20,20
+                    z = playerPosition.z - this.spawnDistance * 1.5; // Increased from 1.2
                     break;
             }
             
             asteroid.position.set(x, y, z);
             
             // Scale varies by distance - further asteroids appear larger
-            const distanceFactor = 1 + ((dist / this.boundaryDistance) - 1) * 0.5;
-            const scale = getRandomFloat(0.02, 0.05) * distanceFactor;
+            const distanceFactor = 1 + ((dist / this.boundaryDistance) - 1) * 0.7; // Increased from 0.5
+            const scale = getRandomFloat(0.02, 0.06) * distanceFactor; // Increased max from 0.05
             asteroid.scale.set(scale, scale, scale);
             
             // Random rotation speed
             asteroid.rotationSpeed = {
-                x: getRandomFloat(-0.5, 0.5),
-                y: getRandomFloat(-0.5, 0.5),
-                z: getRandomFloat(-0.5, 0.5)
+                x: getRandomFloat(-0.6, 0.6), // Slightly increased from -0.5,0.5
+                y: getRandomFloat(-0.6, 0.6), // Slightly increased from -0.5,0.5
+                z: getRandomFloat(-0.6, 0.6)  // Slightly increased from -0.5,0.5
             };
             
-            // Movement speed
-            asteroid.speed = getRandomFloat(10, 15);
+            // Movement speed with slightly more variation
+            asteroid.speed = getRandomFloat(10, 18); // Increased max from 15
             
-            // Add lateral movement
+            // Add lateral movement with more variation
             asteroid.lateralMovement = {
                 x: lateralX,
                 y: lateralY
             };
+            
+            // Make boundary asteroids brighter by increasing material brightness
+            asteroid.traverse(child => {
+                if (child.isMesh && child.material) {
+                    // Clone to avoid affecting other asteroids
+                    child.material = child.material.clone();
+                    
+                    // Add emissive property for better visibility
+                    if (!child.material.emissive) {
+                        child.material.emissive = new THREE.Color(0x222222);
+                    } else {
+                        child.material.emissive.set(0x222222);
+                    }
+                    
+                    // Increase material color intensity
+                    if (child.material.color) {
+                        const color = child.material.color.clone();
+                        // Brighten the color
+                        color.r = Math.min(1.0, color.r * 1.3);
+                        color.g = Math.min(1.0, color.g * 1.3);
+                        color.b = Math.min(1.0, color.b * 1.3);
+                        child.material.color = color;
+                    }
+                }
+            });
             
             // 20% chance for boundary tracking asteroids
             asteroid.isTracking = Math.random() < 0.2;
@@ -581,11 +706,12 @@ class AsteroidsManager {
                 asteroid.speed *= 0.7;
                 asteroid.trackingStrength = 0.4;
                 
-                // Make tracking asteroids visually distinctive
+                // Make tracking asteroids visually distinctive with brighter colors
                 asteroid.traverse(child => {
                     if (child.isMesh && child.material) {
                         child.material = child.material.clone();
-                        child.material.color.setHex(0xff4444); // Reddish color
+                        child.material.color.setHex(0xff6666); // Brighter reddish color than before
+                        child.material.emissive = new THREE.Color(0x331111); // Add red glow
                     }
                 });
             }
@@ -595,7 +721,8 @@ class AsteroidsManager {
                 asteroid.traverse(child => {
                     if (child.isMesh && child.material) {
                         child.material = child.material.clone();
-                        child.material.color.setHex(0x666666); // Darker gray color for boundary asteroids
+                        child.material.color.setHex(0x888888); // Lighter gray than before (was 0x666666)
+                        child.material.emissive = new THREE.Color(0x222222); // Add slight glow
                     }
                 });
             }
@@ -603,6 +730,7 @@ class AsteroidsManager {
             // Add to scene
             this.game.scene.add(asteroid);
             this.boundaryAsteroids.push(asteroid);
+            spawnedCount++;
             
             // Create hitbox for collision detection
             const boundingBox = new THREE.Box3().setFromObject(asteroid);
@@ -614,6 +742,26 @@ class AsteroidsManager {
                 height: size.y * 0.8,
                 depth: size.z * 0.8
             };
+        }
+        
+        // Log significant boundary asteroid spawns
+        if (spawnedCount > 2) {
+            console.log(`Spawned ${spawnedCount} boundary asteroids. Total: ${this.boundaryAsteroids.length}`);
+        }
+    }
+
+    // New method to recycle asteroids
+    recycleAsteroid(asteroid) {
+        // Remove from scene but keep the object
+        this.game.scene.remove(asteroid);
+        
+        // Only store in pool if we haven't reached max pool size
+        if (this.asteroidPool.length < this.poolSize) {
+            // Reset any modified properties
+            asteroid.visible = false;
+            
+            // Add to pool for later reuse
+            this.asteroidPool.push(asteroid);
         }
     }
 }
