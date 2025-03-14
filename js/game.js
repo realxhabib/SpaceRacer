@@ -593,27 +593,6 @@ class Game {
                         activeTransitions.add(chunkId);
                     }
                 }
-            } */
-            // Start transition for chunks near boundaries, even if not repositioning yet
-          /*  else if (inTransitionX || inTransitionY || inTransitionZ) {
-                // Only create a transition if we're near a boundary and moving toward it
-                const shouldTransition = 
-                    (inTransitionX && ((cellPositionX > 0.5 && predictedNextX > 0) || (cellPositionX < 0.5 && predictedNextX < 0))) ||
-                    (inTransitionY && ((cellPositionY > 0.5 && predictedNextY > 0) || (cellPositionY < 0.5 && predictedNextY < 0))) ||
-                    (inTransitionZ && ((cellPositionZ > 0.5 && predictedNextZ > 0) || (cellPositionZ < 0.5 && predictedNextZ < 0)));
-                
-                if (shouldTransition) {
-                    this.chunkTransitions[chunkId] = {
-                        fadeState: 'out',
-                        opacity: 1.0,
-                        targetPosition: {
-                            x: desiredX * this.CHUNK_SIZE,
-                            y: desiredY * this.CHUNK_SIZE,
-                            z: desiredZ * this.CHUNK_SIZE
-                        }
-                    };
-                    activeTransitions.add(chunkId);
-                }
             }
             */
         }
@@ -898,7 +877,20 @@ class Game {
         
         // Update distance
         if (this.player && this.player.speed) {
-            this.distance += this.player.speed * deltaTime;
+            // Calculate distance based on player speed and apply a scaling factor
+            // This ensures faster players cover more distance in the UI
+            const baseSpeed = 20; // Reference speed
+            const speedFactor = this.player.speed / baseSpeed;
+            
+            // Apply a non-linear scaling to make distance increase more with higher speeds
+            // This creates a more rewarding feeling for players who maintain high speeds
+            const distanceMultiplier = Math.pow(speedFactor, 1.2);
+            
+            // Calculate distance traveled this frame
+            const distanceThisFrame = this.player.speed * deltaTime * distanceMultiplier;
+            
+            // Add to total distance
+            this.distance += distanceThisFrame;
             
             // Update distance display in UI
             updateTextContent('distance-value', formatDistance(this.distance));

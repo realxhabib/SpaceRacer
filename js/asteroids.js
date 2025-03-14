@@ -7,35 +7,39 @@ class AsteroidsManager {
         this.game = game;
         this.asteroids = [];
         this.asteroidModel = null;
-        this.spawnDistance = -1800;               // Increased from -1500 to spawn further ahead
+        this.spawnDistance = -800;               // Increased from -1500 to spawn further ahead
         this.despawnDistance = 50;                // Keep the same
-        this.spawnInterval = 0.3;                 // Decreased from 0.9 to spawn much more frequently
+        this.spawnInterval = 0.5;                 // Decreased from 0.9 to spawn much more frequently
         this.spawnTimer = 0;
-        this.spawnCount = 10;                     // Increased from 3 to create many more asteroids at once
+        this.spawnCount = 5;                     // Increased from 3 to create many more asteroids at once
         this.minSpawnX = -40;                     // Wider spawn area
         this.maxSpawnX = 40;                      // Wider spawn area
         this.minSpawnY = -20;                     // Wider spawn area
         this.maxSpawnY = 20;                      // Wider spawn area
         this.damageAmount = 10;                   // Keep the same
         this.gameTime = 0;                        // Keep the same
-        this.maxAsteroids = 500;                  // Drastically increased from 70 to allow hundreds of asteroids
+        this.maxAsteroids = 300;                  // Drastically increased from 70 to allow hundreds of asteroids
         this.trackingAsteroidChance = 0.1;        // Keep the same
         this.directPathChance = 0.2;              // Keep the same
         this.distanceCheckpoints = [500, 1000, 2000, 3000, 5000, 7500, 10000]; // Keep the same
         this.lastDistanceCheckpoint = 0;          // Keep the same
         
         // New properties for boundary asteroids
-        this.boundaryDistance = 80;               // Distance from player at which boundary asteroids spawn
-        this.boundaryDensity = 0.5;               // 0-1 value for how dense the boundary asteroid field is
-        this.boundarySpawnInterval = 1.5;         // Time between boundary asteroid spawns
+        this.boundaryDistance = 100;               // Distance from player at which boundary asteroids spawn
+        this.boundaryDensity = 1.0;               // 0-1 value for how dense the boundary asteroid field is
+        this.boundarySpawnInterval = 1.0;         // Time between boundary asteroid spawns
         this.boundarySpawnTimer = 0;              // Timer for boundary asteroids
         this.boundaryAsteroids = [];              // Track boundary asteroids separately
         
         // Asteroid recycling properties
         this.asteroidPool = [];                   // Pool of inactive asteroids for recycling
-        this.poolSize = 500;                      // Max size of the asteroid pool
-        this.recycleChunkSize = 20;               // Process recycling in chunks to avoid performance issues
+        this.poolSize = 100;                      // Max size of the asteroid pool
+        this.recycleChunkSize = 5;               // Process recycling in chunks to avoid performance issues
         this.lastRecycleTime = 0;                 // Track last recycle operation time
+        
+        // Add path asteroids timer
+        this.pathAsteroidsInterval = 0.3; // Spawn path asteroids every 0.3 seconds
+        this.pathAsteroidsTimer = 0;
     }
 
     initialize() {
@@ -61,6 +65,9 @@ class AsteroidsManager {
         // Update boundary spawn timer
         this.boundarySpawnTimer += deltaTime;
         
+        // Update path asteroids timer
+        this.pathAsteroidsTimer += deltaTime;
+        
         // Spawn new asteroids
         if (this.spawnTimer >= this.spawnInterval) {
             this.spawnTimer = 0;
@@ -71,6 +78,12 @@ class AsteroidsManager {
         if (this.boundarySpawnTimer >= this.boundarySpawnInterval) {
             this.boundarySpawnTimer = 0;
             this.spawnBoundaryAsteroids();
+        }
+        
+        // Spawn path asteroids
+        if (this.pathAsteroidsTimer >= this.pathAsteroidsInterval) {
+            this.pathAsteroidsTimer = 0;
+            this.spawnPathAsteroids();
         }
         
         // Update existing asteroids
@@ -320,6 +333,13 @@ class AsteroidsManager {
             y: this.game.player.velocityY || 0
         };
         
+        // Get player speed to adjust spawn distance - faster players need asteroids to spawn further ahead
+        const playerSpeed = this.game.player.speed || 20;
+        const speedFactor = playerSpeed / 20; // Normalize to base speed
+        
+        // Adjust spawn distance based on player speed
+        const adjustedSpawnDistance = this.spawnDistance * Math.max(1.0, speedFactor * 0.8);
+        
         // Track last recorded player positions to determine trajectory
         if (!this.playerPositionHistory) {
             this.playerPositionHistory = [];
@@ -390,13 +410,13 @@ class AsteroidsManager {
             let x, y, z;
             const spawnType = Math.random();
             
-            // Increased spawn area constants for even better distribution
-            const horizontalSpread = 120; // Increased from 100
-            const verticalSpread = 60;    // Increased from 40
+            // SIGNIFICANTLY increased spawn area constants for much wider distribution
+            const horizontalSpread = 200; // Increased from 120 to 200 for much greater left-right spread
+            const verticalSpread = 120;   // Increased from 60 to 120 for much greater up-down spread
             
             // Predictive spawning - use player velocity and direction to anticipate their path
-            // Prediction factor: higher = more forward-looking spawn pattern
-            const predictionFactor = 3.0; // How far ahead to anticipate movement
+            // Higher prediction factor to spawn further ahead based on player speed
+            const predictionFactor = 3.0 * speedFactor; // Scale with player speed
             
             // Calculate predicted future position
             const predictedX = playerPosition.x + (movementTrend.x * predictionFactor);
@@ -404,32 +424,33 @@ class AsteroidsManager {
             
             if (spawnType < this.directPathChance) {
                 // Spawn directly in front of player's predicted path
-                x = predictedX + getRandomFloat(-25, 25); // Slightly wider than before
-                y = predictedY + getRandomFloat(-25, 25); // Slightly wider than before
-                z = playerPosition.z + this.spawnDistance * 0.7; // Closer than regular asteroids
+                x = predictedX + getRandomFloat(-35, 35); // Widened from -25,25
+                y = predictedY + getRandomFloat(-35, 35); // Widened from -25,25
+                z = playerPosition.z + adjustedSpawnDistance * 0.7; // Use speed-adjusted spawn distance
             } else if (spawnType < this.directPathChance + 0.3) {
                 // 30% chance: Spawn in the direction player is moving
                 // Stronger bias along movement trend
-                x = predictedX + (playerMovementDirection.x * horizontalSpread * 0.6) + getRandomFloat(-20, 20);
-                y = predictedY + (playerMovementDirection.y * verticalSpread * 0.6) + getRandomFloat(-20, 20);
-                z = playerPosition.z + this.spawnDistance;
+                x = predictedX + (playerMovementDirection.x * horizontalSpread * 0.7) + getRandomFloat(-30, 30);
+                y = predictedY + (playerMovementDirection.y * verticalSpread * 0.7) + getRandomFloat(-30, 30);
+                z = playerPosition.z + adjustedSpawnDistance;
             } else if (spawnType < this.directPathChance + 0.7) {
                 // 40% chance: Wide distribution biased toward edges but covering full area
                 // This creates more asteroids on the sides rather than center
                 
-                // Create a grid-like distribution with more density
-                const gridColumns = 5; // Number of columns in our conceptual grid
-                const gridRows = 3;    // Number of rows in our grid
+                // Improved distribution with wider spread
+                // Create a grid-like distribution with more density and further reaching edges
+                const gridColumns = 6; // Increased from 5
+                const gridRows = 4;    // Increased from 3
                 
-                // Choose a cell in the grid with edge bias
+                // Choose a cell in the grid with strong edge bias
                 let cellX, cellY;
                 
-                if (Math.random() < 0.6) {
-                    // 60% favor edges (first/last column/row)
+                if (Math.random() < 0.7) { // Increased edge bias from 0.6 to 0.7
+                    // 70% favor edges (first/last column/row)
                     cellX = Math.random() < 0.5 ? 0 : gridColumns - 1;
                     cellY = Math.floor(Math.random() * gridRows);
                 } else {
-                    // 40% any cell
+                    // 30% any cell
                     cellX = Math.floor(Math.random() * gridColumns);
                     cellY = Math.floor(Math.random() * gridRows);
                 }
@@ -440,23 +461,23 @@ class AsteroidsManager {
                 
                 x = predictedX - horizontalSpread + (cellX * cellWidth) + getRandomFloat(0, cellWidth);
                 y = predictedY - verticalSpread + (cellY * cellHeight) + getRandomFloat(0, cellHeight);
-                z = playerPosition.z + this.spawnDistance;
+                z = playerPosition.z + adjustedSpawnDistance;
             } else {
-                // Remaining ~30%: Spawn in full 360° radius around predicted position
-                const radius = getRandomFloat(30, 70); // Increased max radius for wider coverage
+                // Remaining ~30%: Spawn in full 360° radius around predicted position with wider radius
+                const radius = getRandomFloat(40, 100); // Increased from 30-70 for wider coverage
                 const angle = getRandomFloat(0, Math.PI * 2);
                 
                 x = predictedX + Math.cos(angle) * radius;
                 y = predictedY + Math.sin(angle) * radius;
                 
                 // Spawn slightly ahead of player to give reaction time
-                z = playerPosition.z - getRandomFloat(20, 100); // Increased range for better coverage
+                z = playerPosition.z - getRandomFloat(40, 120); // Increased from 20-100
             }
             
             asteroid.position.set(x, y, z);
             
             // Random scale with more size variation for visual interest
-            const scale = getRandomFloat(0.015, 0.045);
+            const scale = getRandomFloat(0.015, 0.055); // Increased max size
             asteroid.scale.set(scale, scale, scale);
             
             // Random rotation speed
@@ -475,7 +496,7 @@ class AsteroidsManager {
             
             if (speedType < 0.15) {
                 // Fast asteroid - much higher speeds
-                speed = getRandomFloat(25, 45); // Significantly faster asteroids
+                speed = getRandomFloat(25, 45) * Math.max(1.0, speedFactor * 0.3); // Scale with player speed
                 
                 // Make fast asteroids visually distinctive with a yellow/orange tint
                 asteroid.traverse(child => {
@@ -491,10 +512,10 @@ class AsteroidsManager {
                 asteroid.scale.set(currentScale * 0.9, currentScale * 0.9, currentScale * 0.9);
             } else if (speedType < 0.35) {
                 // Medium-fast asteroid (20% chance)
-                speed = getRandomFloat(18, 26);
+                speed = getRandomFloat(18, 26) * Math.max(1.0, speedFactor * 0.2); // Scale with player speed
             } else if (speedType < 0.65) {
                 // Normal asteroid (30% chance)
-                speed = getRandomFloat(12, 18);
+                speed = getRandomFloat(12, 18) * Math.max(1.0, speedFactor * 0.1); // Scale with player speed
             } else {
                 // Slow asteroid (35% chance)
                 speed = getRandomFloat(6, 12);
@@ -509,25 +530,25 @@ class AsteroidsManager {
             
             // Add lateral movement with patterns based on spawn position
             // Asteroids at extreme edges tend to move inward for better coverage
-            let lateralX = getRandomFloat(-10, 10);
-            let lateralY = getRandomFloat(-6, 6);
+            let lateralX = getRandomFloat(-12, 12); // Increased from -10,10
+            let lateralY = getRandomFloat(-8, 8);   // Increased from -6,6
             
-            // If asteroid is far from center, add slight inward bias
+            // If asteroid is far from center, add stronger inward bias
             const distanceFromCenterX = Math.abs(x - predictedX);
             const distanceFromCenterY = Math.abs(y - predictedY);
             
-            if (distanceFromCenterX > horizontalSpread * 0.7) {
+            if (distanceFromCenterX > horizontalSpread * 0.6) {
                 // Add inward bias for extreme edge asteroids
                 lateralX = x > predictedX ? 
-                    getRandomFloat(-12, -3) : // Right side, move left
-                    getRandomFloat(3, 12);    // Left side, move right
+                    getRandomFloat(-15, -5) : // Right side, move left (stronger bias)
+                    getRandomFloat(5, 15);    // Left side, move right (stronger bias)
             }
             
-            if (distanceFromCenterY > verticalSpread * 0.7) {
+            if (distanceFromCenterY > verticalSpread * 0.6) {
                 // Add inward bias for extreme edge asteroids
                 lateralY = y > predictedY ? 
-                    getRandomFloat(-8, -3) : // Top side, move down
-                    getRandomFloat(3, 8);    // Bottom side, move up
+                    getRandomFloat(-10, -4) : // Top side, move down (stronger bias)
+                    getRandomFloat(4, 10);    // Bottom side, move up (stronger bias)
             }
             
             asteroid.lateralMovement = {
@@ -832,7 +853,7 @@ class AsteroidsManager {
             this.spawnCount = 6;
             this.spawnInterval = 0.7;
             this.boundaryDensity = 0.9;
-            this.boundaryDistance = 70; // Tighten boundary
+            this.boundaryDistance = 30; // Tighten boundary
         }
         
         // Distance-based difficulty scaling (overrides time-based if higher)
@@ -922,6 +943,10 @@ class AsteroidsManager {
             y: this.game.player.velocityY || 0
         };
         
+        // Get player speed to adjust spawn parameters
+        const playerSpeed = this.game.player.speed || 20;
+        const speedFactor = playerSpeed / 20; // Normalize to base speed
+        
         // Use the movement history we track in spawnAsteroids for consistency
         let movementTrend = { x: 0, y: 0 };
         if (this.playerPositionHistory && this.playerPositionHistory.length >= 3) {
@@ -948,8 +973,8 @@ class AsteroidsManager {
         );
         
         // Increase count when player moves faster
-        const speedFactor = Math.min(1.5, 1.0 + velocityMagnitude * 2); 
-        const count = Math.ceil(3 * this.boundaryDensity * speedFactor);
+        const speedFactor2 = Math.min(2.0, 1.0 + velocityMagnitude * 2.5); 
+        const count = Math.ceil(4 * this.boundaryDensity * speedFactor2); // Increased base from 3 to 4
         let spawnedCount = 0;
         
         for (let i = 0; i < count; i++) {
@@ -981,25 +1006,25 @@ class AsteroidsManager {
                     const normX = movementTrend.x / trendMagnitude;
                     const normY = movementTrend.y / trendMagnitude;
                     
-                    // Apply weight adjustments
+                    // Apply weight adjustments - stronger bias based on movement
                     if (normX < -0.3) {
                         // Moving left, increase left boundary weight
-                        boundaryWeights[0] += 0.3;
+                        boundaryWeights[0] += 0.4; // Increased from 0.3
                     } else if (normX > 0.3) {
                         // Moving right, increase right boundary weight
-                        boundaryWeights[1] += 0.3;
+                        boundaryWeights[1] += 0.4; // Increased from 0.3
                     }
                     
                     if (normY > 0.3) {
                         // Moving up, increase top boundary weight
-                        boundaryWeights[2] += 0.3;
+                        boundaryWeights[2] += 0.4; // Increased from 0.3
                     } else if (normY < -0.3) {
                         // Moving down, increase bottom boundary weight
-                        boundaryWeights[3] += 0.3;
+                        boundaryWeights[3] += 0.4; // Increased from 0.3
                     }
                     
                     // Add weight for far ahead based on forward speed
-                    boundaryWeights[4] = 0.2; // Give the far ahead boundary a base chance
+                    boundaryWeights[4] = 0.3 * speedFactor; // Scale with player speed, increased from 0.2
                 }
                 
                 // Normalize weights to sum to 1.0
@@ -1025,72 +1050,74 @@ class AsteroidsManager {
             let lateralX = 0, lateralY = 0;
             
             // Prediction for spawn position
-            const predictionFactor = 2.0; // How far ahead to anticipate movement
+            const predictionFactor = 2.5 * speedFactor; // Increased from 2.0 and scales with player speed
             const predictedX = playerPosition.x + (movementTrend.x * predictionFactor);
             const predictedY = playerPosition.y + (movementTrend.y * predictionFactor);
             
-            // Spawn distance for this asteroid - increased for better spread
-            const dist = this.boundaryDistance * (1.0 + Math.random() * 0.6);
+            // Spawn distance for this asteroid - INCREASED to make boundary asteroids visible from farther away
+            const distBase = this.boundaryDistance * (1.5 + speedFactor * 0.5); // Increased from 1.0 to 1.5 base multiplier
+            const dist = distBase * (1.0 + Math.random() * 0.8);
             
             switch (boundaryType) {
                 case 0: // Left boundary
                     x = predictedX - dist;
                     // More variety on vertical position, and bias toward predicted path
-                    y = predictedY + getRandomFloat(-dist/1.2, dist/1.2);
-                    // Vary depth with some in front and some behind
-                    z = playerPosition.z + getRandomFloat(-100, 20);
-                    // Strong inward lateral movement
-                    lateralX = getRandomFloat(4, 9);
+                    y = predictedY + getRandomFloat(-dist/1.0, dist/1.0);
+                    // Vary depth with more in front for faster players
+                    z = playerPosition.z + getRandomFloat(-220 * speedFactor, 20); // Increased from -150 to -220 to make visible from farther
+                    // Strong inward lateral movement, scaled with player speed
+                    lateralX = getRandomFloat(5, 12) * Math.max(1.0, speedFactor * 0.5);
                     break;
                     
                 case 1: // Right boundary
                     x = predictedX + dist;
                     // More variety on vertical position, and bias toward predicted path
-                    y = predictedY + getRandomFloat(-dist/1.2, dist/1.2);
-                    // Vary depth with some in front and some behind
-                    z = playerPosition.z + getRandomFloat(-100, 20);
-                    // Strong inward lateral movement
-                    lateralX = getRandomFloat(-9, -4);
+                    y = predictedY + getRandomFloat(-dist/1.0, dist/1.0);
+                    // Vary depth with more in front for faster players
+                    z = playerPosition.z + getRandomFloat(-220 * speedFactor, 20); // Increased from -150 to -220
+                    // Strong inward lateral movement, scaled with player speed
+                    lateralX = getRandomFloat(-12, -5) * Math.max(1.0, speedFactor * 0.5);
                     break;
                     
                 case 2: // Top boundary
                     // More variety on horizontal position, and bias toward predicted path
-                    x = predictedX + getRandomFloat(-dist/1.2, dist/1.2);
+                    x = predictedX + getRandomFloat(-dist/1.0, dist/1.0);
                     y = predictedY + dist;
-                    // Vary depth with some in front and some behind
-                    z = playerPosition.z + getRandomFloat(-100, 20);
-                    // Strong inward lateral movement
-                    lateralY = getRandomFloat(-9, -4);
+                    // Vary depth with more in front for faster players
+                    z = playerPosition.z + getRandomFloat(-220 * speedFactor, 20); // Increased from -150 to -220
+                    // Strong inward lateral movement, scaled with player speed
+                    lateralY = getRandomFloat(-12, -5) * Math.max(1.0, speedFactor * 0.5);
                     break;
                     
                 case 3: // Bottom boundary
                     // More variety on horizontal position, and bias toward predicted path
-                    x = predictedX + getRandomFloat(-dist/1.2, dist/1.2);
+                    x = predictedX + getRandomFloat(-dist/1.0, dist/1.0);
                     y = predictedY - dist;
-                    // Vary depth with some in front and some behind
-                    z = playerPosition.z + getRandomFloat(-100, 20);
-                    // Strong inward lateral movement
-                    lateralY = getRandomFloat(4, 9);
+                    // Vary depth with more in front for faster players
+                    z = playerPosition.z + getRandomFloat(-220 * speedFactor, 20); // Increased from -150 to -220
+                    // Strong inward lateral movement, scaled with player speed
+                    lateralY = getRandomFloat(5, 12) * Math.max(1.0, speedFactor * 0.5);
                     break;
                     
                 case 4: // Far ahead for extreme forward movement
-                    // Use wider spread to ensure coverage of future path
-                    x = predictedX + getRandomFloat(-50, 50);
-                    y = predictedY + getRandomFloat(-50, 50);
-                    // Much farther ahead
-                    z = playerPosition.z - this.spawnDistance * 1.8;
+                    // Use much wider spread to ensure coverage of future path
+                    x = predictedX + getRandomFloat(-80, 80);
+                    y = predictedY + getRandomFloat(-80, 80);
+                    // Much farther ahead, scaled with player speed - increased to be visible from farther away
+                    z = playerPosition.z - this.spawnDistance * (2.2 + speedFactor * 0.6); // Increased from 1.8 to 2.2
                     
-                    // Add slight movement toward predicted player position
+                    // Add stronger movement toward predicted player position
                     const dirToPredicted = {
                         x: predictedX - x,
                         y: predictedY - y
                     };
                     
-                    // Normalize and scale
+                    // Normalize and scale with player speed
                     const dirMagnitude = Math.sqrt(dirToPredicted.x * dirToPredicted.x + dirToPredicted.y * dirToPredicted.y);
                     if (dirMagnitude > 0) {
-                        lateralX = (dirToPredicted.x / dirMagnitude) * getRandomFloat(2, 5);
-                        lateralY = (dirToPredicted.y / dirMagnitude) * getRandomFloat(2, 5);
+                        const moveFactor = Math.max(1.0, speedFactor * 0.6);
+                        lateralX = (dirToPredicted.x / dirMagnitude) * getRandomFloat(3, 6) * moveFactor;
+                        lateralY = (dirToPredicted.y / dirMagnitude) * getRandomFloat(3, 6) * moveFactor;
                     }
                     break;
             }
@@ -1124,7 +1151,7 @@ class AsteroidsManager {
             
             if (speedRoll < 0.12) {
                 // Ultra-fast missile-like asteroids (12% chance)
-                speed = getRandomFloat(35, 60);
+                speed = getRandomFloat(35, 60) * Math.max(1.0, speedFactor * 0.4); // Scale with player speed
                 
                 // Make ultra-fast asteroids visually distinctive with a red-orange glow
                 asteroid.traverse(child => {
@@ -1148,7 +1175,7 @@ class AsteroidsManager {
                 asteroid.rotation.y = Math.atan2(lateralX, 1);
             } else if (speedRoll < 0.35) {
                 // Fast asteroids (23% chance)
-                speed = getRandomFloat(22, 32);
+                speed = getRandomFloat(22, 32) * Math.max(1.0, speedFactor * 0.3); // Scale with player speed
                 
                 // Make fast asteroids visually distinctive with a yellow tint
                 asteroid.traverse(child => {
@@ -1165,11 +1192,11 @@ class AsteroidsManager {
             } else if (speedRoll < 0.70) {
                 // Normal asteroids (35% chance)
                 speed = targetingPlayerPath ? 
-                    getRandomFloat(14, 22) : // Slightly faster if targeting player's path
-                    getRandomFloat(12, 18);  // Normal speed otherwise
+                    getRandomFloat(14, 22) * Math.max(1.0, speedFactor * 0.2) : // Scale with player speed if targeting path
+                    getRandomFloat(12, 18) * Math.max(1.0, speedFactor * 0.1);  // Scale less if not targeting
             } else {
                 // Slow but larger asteroids (30% chance)
-                speed = getRandomFloat(7, 14);
+                speed = getRandomFloat(7, 14) * Math.max(1.0, speedFactor * 0.05); // Minimal scaling with player speed
                 
                 // Slow asteroids are larger
                 const currentScale = asteroid.scale.x;
@@ -1332,6 +1359,120 @@ class AsteroidsManager {
                 // Remove from list
                 this.animatedParticles.splice(i, 1);
             }
+        }
+    }
+
+    spawnPathAsteroids() {
+        const playerPosition = this.game.player.getPosition();
+        const playerSpeed = this.game.player.speed || 20;
+        const speedFactor = playerSpeed / 20;
+
+        // Limit the total number of asteroids to prevent performance issues
+        if (this.asteroids.length >= this.maxAsteroids) {
+            return;
+        }
+
+        // Adjust spawn count based on player speed
+        const spawnCount = Math.min(
+            Math.ceil(2 * speedFactor), 
+            this.maxAsteroids - this.asteroids.length
+        );
+        
+        // Only spawn if we're below a certain threshold to prevent too many asteroids
+        if (spawnCount <= 0) {
+            return;
+        }
+
+        // Adjust spawn distance based on player speed
+        const spawnDistance = this.spawnDistance * Math.max(1.0, speedFactor * 0.5);
+
+        // Get player movement direction for better path prediction
+        const playerMovementDirection = this.game.player.movementDirection || { x: 0, y: 0 };
+        
+        for (let i = 0; i < spawnCount; i++) {
+            let asteroid;
+
+            if (this.asteroidPool.length > 0) {
+                asteroid = this.asteroidPool.pop();
+                asteroid.visible = true;
+            } else {
+                asteroid = this.asteroidModel.clone();
+                asteroid.visible = true;
+            }
+
+            // Position directly in player's path with WIDER spread (increased from -10,10 to -18,18 for x and -5,5 to -12,12 for y)
+            const directionBias = 0.7; // How much to bias toward player's movement direction
+            const x = playerPosition.x + 
+                      (playerMovementDirection.x * directionBias * 20) + 
+                      getRandomFloat(-350, 350); // Much wider spread: from -35,35 to -45,45
+            const y = playerPosition.y + 
+                      (playerMovementDirection.y * directionBias * 10) + 
+                      getRandomFloat(-350, 350); // Much wider spread: from -25,25 to -35,35
+            const z = playerPosition.z + spawnDistance;
+
+            asteroid.position.set(x, y, z);
+
+            // Slightly smaller scale for path asteroids
+            const scale = getRandomFloat(0.05, 0.2);
+            asteroid.scale.set(scale, scale, scale);
+
+            // Speed scales with player speed
+            asteroid.speed = getRandomFloat(15, 25) * speedFactor;
+
+            asteroid.rotationSpeed = {
+                x: getRandomFloat(-0.3, 0.3),
+                y: getRandomFloat(-0.3, 0.3),
+                z: getRandomFloat(-0.3, 0.3)
+            };
+
+            // Minimal lateral movement to keep them in player's path
+            asteroid.lateralMovement = {
+                x: getRandomFloat(-2, 2),
+                y: getRandomFloat(-1, 1)
+            };
+
+            // Add tracking capability to some path asteroids (variable rate from 25-35%)
+            // The chance increases slightly with player speed to add challenge
+            const trackingChance = 0.25 + (speedFactor * 0.05);
+            asteroid.isTracking = Math.random() < trackingChance;
+            
+            if (asteroid.isTracking) {
+                // Variable tracking strength between 0.2 and 0.5
+                asteroid.trackingStrength = 0.2 + Math.random() * 0.3;
+                
+                // Give tracking path asteroids a slight purple tint to distinguish them
+                asteroid.traverse(child => {
+                    if (child.isMesh && child.material) {
+                        child.material = child.material.clone();
+                        // Mix blue and slight purple for a distinctive look
+                        child.material.color.setHex(0xb3b9ff);
+                        child.material.emissive = new THREE.Color(0x221133);
+                    }
+                });
+            } else {
+                // Make non-tracking path asteroids visually distinct with a light blue tint
+                asteroid.traverse(child => {
+                    if (child.isMesh && child.material) {
+                        child.material = child.material.clone();
+                        child.material.color.setHex(0xaaccff); // Light blue tint
+                    }
+                });
+            }
+
+            // Add to scene and array
+            this.game.scene.add(asteroid);
+            this.asteroids.push(asteroid);
+            
+            // Create hitbox for collision detection
+            const boundingBox = new THREE.Box3().setFromObject(asteroid);
+            const size = new THREE.Vector3();
+            boundingBox.getSize(size);
+            
+            asteroid.hitboxSize = {
+                width: size.x * 0.8, // Slightly smaller than actual model
+                height: size.y * 0.8,
+                depth: size.z * 0.8
+            };
         }
     }
 }

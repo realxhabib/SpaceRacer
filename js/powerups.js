@@ -51,12 +51,41 @@ class PowerUpsManager {
         
         // Update existing power-ups
         const playerPosition = this.game.player.getPosition();
+        const currentTime = performance.now() / 1000; // Current time in seconds
         
         for (let i = this.powerUps.length - 1; i >= 0; i--) {
             const powerUp = this.powerUps[i];
             
-            // Rotate power-up
-            powerUp.rotation.y += 1 * deltaTime;
+            // Apply custom rotation and motion based on userData
+            if (powerUp.userData) {
+                // Rotate power-up with custom speed
+                powerUp.rotation.y += powerUp.userData.rotationSpeed * deltaTime;
+                
+                // Apply bobbing motion - sine wave based on time
+                if (powerUp.userData.originalY !== undefined) {
+                    const age = currentTime - powerUp.userData.spawnTime;
+                    const bobHeight = 0.5; // Maximum bob height
+                    const bobFrequency = 1.5; // Speed of bobbing motion
+                    
+                    // Calculate new Y position with bobbing motion
+                    powerUp.position.y = powerUp.userData.originalY + 
+                        Math.sin(age * bobFrequency * Math.PI) * bobHeight;
+                    
+                    // Add a subtle pulsing glow effect
+                    powerUp.traverse(child => {
+                        if (child.isMesh && child.material) {
+                            const material = Array.isArray(child.material) ? child.material[0] : child.material;
+                            if (material.emissiveIntensity !== undefined) {
+                                // Pulsing glow intensity
+                                material.emissiveIntensity = 0.7 + Math.sin(age * 3 * Math.PI) * 0.3;
+                            }
+                        }
+                    });
+                }
+            } else {
+                // Fallback for power-ups without userData
+                powerUp.rotation.y += 1 * deltaTime;
+            }
             
             // Check if power-up is behind player and should be removed
             if (powerUp.position.z > playerPosition.z + this.despawnDistance) {
@@ -82,15 +111,108 @@ class PowerUpsManager {
     spawnPowerUp() {
         const playerPosition = this.game.player.getPosition();
         
+        // Get player movement data for predictive spawning
+        const playerMovementDirection = this.game.player.movementDirection || { x: 0, y: 0 };
+        const playerVelocity = {
+            x: this.game.player.velocityX || 0,
+            y: this.game.player.velocityY || 0
+        };
+        
+        // Get player speed to better position power-ups
+        const playerSpeed = this.game.player.speed || 20;
+        const speedFactor = playerSpeed / 20; // Normalize to base speed
+        
+        // Track player position history if not already tracked in AsteroidsManager
+        if (!this.game.asteroidsManager.playerPositionHistory) {
+            // Initialize our own player history if asteroids manager doesn't have one
+            if (!this.playerPositionHistory) {
+                this.playerPositionHistory = [];
+            }
+            
+            // Add current position to history, keep last 10 positions
+            this.playerPositionHistory.push({
+                x: playerPosition.x,
+                y: playerPosition.y,
+                z: playerPosition.z,
+                time: performance.now()
+            });
+            
+            // Limit history size
+            if (this.playerPositionHistory.length > 10) {
+                this.playerPositionHistory.shift();
+            }
+        }
+        
+        // Calculate movement trend - either use our tracking or the asteroid manager's
+        let movementTrend = { x: 0, y: 0 };
+        let positionHistory = this.game.asteroidsManager.playerPositionHistory || this.playerPositionHistory;
+        
+        if (positionHistory && positionHistory.length >= 3) {
+            const newest = positionHistory[positionHistory.length - 1];
+            const oldest = positionHistory[0];
+            
+            // Calculate average movement direction over time
+            const timeDiff = (newest.time - oldest.time) / 1000; // in seconds
+            if (timeDiff > 0) {
+                movementTrend.x = (newest.x - oldest.x) / timeDiff;
+                movementTrend.y = (newest.y - oldest.y) / timeDiff;
+            }
+        }
+        
         // Clone mystery box model
         const powerUp = this.mysteryBoxModel.clone();
         powerUp.visible = true;
         
-        // Random position
-        const x = getRandomFloat(this.minSpawnX, this.maxSpawnX);
-        const y = getRandomFloat(this.minSpawnY, this.maxSpawnY);
-        const z = playerPosition.z + this.spawnDistance;
+        // Determine spawn strategy based on player speed and movement
+        const spawnStrategy = Math.random();
         
+        // Predictive spawning - use player velocity and direction to anticipate their path
+        const predictionFactor = 1.5; // How far ahead to predict (lower than asteroids for better accessibility)
+        const predictedX = playerPosition.x + (movementTrend.x * predictionFactor);
+        const predictedY = playerPosition.y + (movementTrend.y * predictionFactor);
+        
+        // Adjusted spawn distance based on player speed
+        const adjustedSpawnDistance = this.spawnDistance * Math.max(1.0, speedFactor * 0.6);
+        
+        // Determine position based on different strategies
+        let x, y, z;
+        
+        if (spawnStrategy < 0.35) {
+            // 35% chance: Spawn in player's predicted path for easier acquisition
+            // Use a narrower range to ensure it's not too hard to reach
+            x = predictedX + getRandomFloat(-3, 3);
+            y = predictedY + getRandomFloat(-2, 2);
+            z = playerPosition.z + adjustedSpawnDistance * 0.8; // Closer to player
+        } else if (spawnStrategy < 0.70) {
+            // 35% chance: Spawn slightly off the player's predicted movement path
+            // This rewards players for movement and exploration
+            
+            // Use player's movement to determine offset direction, placing power-ups 
+            // in areas the player is trending toward but not directly in path
+            const offsetMagnitude = getRandomFloat(4, 8);
+            const offsetAngle = Math.atan2(movementTrend.y, movementTrend.x) + getRandomFloat(-Math.PI/3, Math.PI/3);
+            
+            // Calculate offset position
+            x = predictedX + Math.cos(offsetAngle) * offsetMagnitude;
+            y = predictedY + Math.sin(offsetAngle) * offsetMagnitude;
+            z = playerPosition.z + adjustedSpawnDistance * 0.9;
+        } else {
+            // 30% chance: Random position within a wider play area
+            // For more exploratory players who move around a lot
+            x = getRandomFloat(this.minSpawnX * 1.5, this.maxSpawnX * 1.5);
+            y = getRandomFloat(this.minSpawnY * 1.5, this.maxSpawnY * 1.5);
+            z = playerPosition.z + adjustedSpawnDistance;
+            
+            // If player is moving significantly, add a slight bias in that direction
+            const movementMagnitude = Math.sqrt(movementTrend.x * movementTrend.x + movementTrend.y * movementTrend.y);
+            if (movementMagnitude > 1.0) {
+                // Add slight bias toward movement direction
+                x += movementTrend.x * getRandomFloat(0.5, 1.5);
+                y += movementTrend.y * getRandomFloat(0.5, 1.5);
+            }
+        }
+        
+        // Position the power-up
         powerUp.position.set(x, y, z);
         
         // Set scale - increased from 5.0 to 8.0 to make the box bigger
@@ -113,6 +235,15 @@ class PowerUpsManager {
             }
         });
         
+        // Add subtle glow effect to make power-ups more visible
+        powerUp.traverse(child => {
+            if (child.isMesh && child.material) {
+                const material = Array.isArray(child.material) ? child.material[0] : child.material;
+                material.emissive = new THREE.Color(0x333399); // Blue-ish glow
+                material.emissiveIntensity = 0.7;
+            }
+        });
+        
         // Assign random power-up type
         powerUp.powerUpType = this.powerUpTypes[getRandomInt(0, this.powerUpTypes.length - 1)];
         
@@ -129,6 +260,13 @@ class PowerUpsManager {
             width: size.x,
             height: size.y,
             depth: size.z
+        };
+        
+        // Add special motion to power-ups to make them more noticeable
+        powerUp.userData = {
+            spawnTime: performance.now() / 1000, // Store spawn time in seconds
+            originalY: powerUp.position.y, // Store original Y position for bobbing motion
+            rotationSpeed: getRandomFloat(0.8, 1.2) // Randomize rotation speed for visual variety
         };
     }
 
