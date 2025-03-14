@@ -6,7 +6,7 @@ class PowerUpsManager {
     constructor(game) {
         this.game = game;
         this.powerUps = [];
-        this.powerUpTypes = ['indestructible', 'health', 'ammo', 'laser'];
+        this.powerUpTypes = ['indestructible', 'health', 'ammo', 'laser', 'gravityShift'];
         this.spawnDistance = -800; // Distance ahead of player to spawn power-ups
         this.despawnDistance = 50; // Distance behind player to despawn power-ups
         this.spawnInterval = 5; // Time between power-up spawns
@@ -19,10 +19,12 @@ class PowerUpsManager {
         // Power-up effects duration
         this.indestructibleDuration = 7; // seconds
         this.laserDuration = 15; // seconds
+        this.gravityShiftDuration = 7; // seconds
         
         // Active power-up timers
         this.activePowerUps = {
-            laser: 0
+            laser: 0,
+            gravityShift: 0
         };
     }
 
@@ -314,6 +316,9 @@ class PowerUpsManager {
                 case 'laser':
                     this.activateLaser();
                     break;
+                case 'gravityShift':
+                    this.activateGravityShift();
+                    break;
             }
         });
     }
@@ -356,7 +361,7 @@ class PowerUpsManager {
         container.style.display = 'flex';
         
         // Define power-up types to cycle through
-        const powerupTypes = ['indestructible', 'health', 'ammo', 'laser'];
+        const powerupTypes = ['indestructible', 'health', 'ammo', 'laser', 'gravityShift'];
         let currentIndex = 0;
         
         // Set up cycling interval
@@ -375,6 +380,9 @@ class PowerUpsManager {
                     break;
                 case 'laser':
                     powerupImage.style.backgroundImage = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><polygon points='50,10 65,80 50,70 35,80' fill='%23ff00ff' /></svg>")`;
+                    break;
+                case 'gravityShift':
+                    powerupImage.style.backgroundImage = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><circle cx='50' cy='50' r='35' fill='none' stroke='%2300ffff' stroke-width='5'/><path d='M30,40 L50,25 L70,40 M30,60 L50,75 L70,60' stroke='%2300ffff' stroke-width='5' fill='none'/><circle cx='50' cy='50' r='15' fill='%2300ffff' opacity='0.7'/></svg>")`;
                     break;
             }
             
@@ -437,6 +445,10 @@ class PowerUpsManager {
             case 'laser':
                 text = 'LASER UPGRADE ACTIVATED!';
                 color = '#ff00ff';
+                break;
+            case 'gravityShift':
+                text = 'GRAVITY SHIFT ACTIVATED!';
+                color = '#00ffff';
                 break;
         }
         
@@ -742,12 +754,33 @@ class PowerUpsManager {
             this.activePowerUps.laser -= deltaTime;
             
             // Update timer display
-            this.updatePowerUpTimer(this.activePowerUps.laser);
+            this.updatePowerUpTimer(this.activePowerUps.laser, this.laserDuration);
             
             if (this.activePowerUps.laser <= 0) {
                 this.game.player.disableLaser();
                 document.getElementById('powerup-icon').style.backgroundImage = '';
                 document.getElementById('powerup-timer').style.display = 'none';
+            }
+        }
+        
+        // Update gravity shift timer
+        if (this.activePowerUps.gravityShift > 0) {
+            this.activePowerUps.gravityShift -= deltaTime;
+            
+            // Update timer display
+            this.updatePowerUpTimer(this.activePowerUps.gravityShift, this.gravityShiftDuration);
+            
+            // Apply gravity shift effect to push asteroids away
+            this.applyGravityShiftEffect();
+            
+            // If gravity shift is ending
+            if (this.activePowerUps.gravityShift <= 0) {
+                // Clear icon and timer
+                document.getElementById('powerup-icon').style.backgroundImage = '';
+                document.getElementById('powerup-timer').style.display = 'none';
+                
+                // Show deactivation effect
+                this.showGravityShiftDeactivation();
             }
         }
     }
@@ -767,6 +800,9 @@ class PowerUpsManager {
                 color = 0xff0000;
                 break;
             case 'laser':
+                color = 0xff00ff;
+                break;
+            case 'gravityShift':
                 color = 0xff00ff;
                 break;
         }
@@ -796,11 +832,455 @@ class PowerUpsManager {
         this.updatePowerUpTimer(duration);
     }
 
-    updatePowerUpTimer(timeLeft) {
+    updatePowerUpTimer(timeLeft, totalDuration) {
         const timerElement = document.getElementById('powerup-timer');
-        const percentage = (timeLeft / this.indestructibleDuration) * 100;
+        const percentage = (timeLeft / totalDuration) * 100;
         
         // Create circular progress indicator
         timerElement.style.background = `conic-gradient(#0af ${percentage}%, transparent ${percentage}%)`;
+    }
+
+    activateGravityShift() {
+        // Set gravity shift timer
+        this.activePowerUps.gravityShift = this.gravityShiftDuration;
+        
+        // Show initial pulse effect
+        this.showGravityShiftActivation();
+        
+        // Create visible gravity field sphere around player
+        this.createGravityFieldSphere();
+        
+        // Show power-up icon
+        this.updatePowerUpIcon('gravityShift');
+        
+        // Start timer display
+        this.startPowerUpTimer(this.gravityShiftDuration);
+        
+        console.log("Gravity Shift activated!");
+    }
+    
+    showGravityShiftActivation() {
+        // Create expanding wave effect
+        this.createGravityPulseWave(this.game.player.getPosition());
+        
+        // Add screen shake for impact
+        this.game.applyScreenShake(0.3, 0.5);
+        
+        // Play activation sound if available
+        if (this.game.soundManager && this.game.soundManager.playSound) {
+            this.game.soundManager.playSound('powerup', 0.7);
+        }
+    }
+    
+    createGravityFieldSphere() {
+        const fieldRadius = 150;
+        
+        // ---- MAIN SHIELD SPHERE ----
+        // Add a wireframe sphere for 3D visual depth
+        const shieldGeometry = new THREE.SphereGeometry(fieldRadius, 24, 24);
+        const shieldMaterial = new THREE.MeshBasicMaterial({
+            color: 0x00ffff,
+            wireframe: true,
+            transparent: true,
+            opacity: 0.3,
+            blending: THREE.AdditiveBlending
+        });
+        
+        this.gravityFieldSphere = new THREE.Mesh(shieldGeometry, shieldMaterial);
+        this.gravityFieldSphere.position.copy(this.game.player.getPosition());
+        this.game.scene.add(this.gravityFieldSphere);
+        
+        // Set consistent rotation speed
+        this.shieldRotationSpeed = 0.01;
+        
+        // ---- MAIN ENERGY RING ----
+        // A single prominent ring for visual clarity and asteroid repulsion
+        const ringGeometry = new THREE.RingGeometry(fieldRadius * 0.8, fieldRadius * 0.9, 64);
+        const ringMaterial = new THREE.MeshBasicMaterial({
+            color: 0x00ffff,
+            transparent: true,
+            opacity: 0.7,
+            blending: THREE.AdditiveBlending,
+            side: THREE.DoubleSide
+        });
+        
+        this.horizontalRing = new THREE.Mesh(ringGeometry, ringMaterial);
+        this.horizontalRing.rotation.x = Math.PI / 2; // Horizontal orientation
+        this.horizontalRing.position.copy(this.game.player.getPosition());
+        this.game.scene.add(this.horizontalRing);
+        
+        // ---- ENERGY CORE ----
+        // Simple energy core in the center
+        const coreGeometry = new THREE.SphereGeometry(8, 12, 12);
+        const coreMaterial = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.5,
+            blending: THREE.AdditiveBlending
+        });
+        
+        this.energyCore = new THREE.Mesh(coreGeometry, coreMaterial);
+        this.energyCore.position.copy(this.game.player.getPosition());
+        this.game.scene.add(this.energyCore);
+        
+        // ---- LIGHTING ----
+        // Just one light for the effect
+        this.gravityFieldLight = new THREE.PointLight(0x00ffff, 3, fieldRadius * 2);
+        this.gravityFieldLight.position.copy(this.game.player.getPosition());
+        this.game.scene.add(this.gravityFieldLight);
+        
+        // Initialize animation properties
+        this.animationTime = 0;
+    }
+    
+    applyGravityShiftEffect() {
+        // Get all asteroids from the asteroids manager
+        if (!this.game.asteroidsManager) return;
+        
+        const playerPosition = this.game.player.getPosition();
+        const allAsteroids = [
+            ...this.game.asteroidsManager.asteroids, 
+            ...this.game.asteroidsManager.boundaryAsteroids
+        ];
+        
+        // Set the radius of effect
+        const effectRadius = 150;
+        const baseForce = 20;
+        
+        // Update animation time
+        this.animationTime = (this.animationTime || 0) + 0.016;
+        const time = this.animationTime;
+        
+        // ---- ANIMATE WIREFRAME SPHERE ----
+        if (this.gravityFieldSphere) {
+            // Simplified pulsing effect
+            const pulseScale = 1.0 + 0.05 * Math.sin(time * 1.2);
+            this.gravityFieldSphere.scale.set(pulseScale, pulseScale, pulseScale);
+            
+            // Consistent rotation for cleaner look
+            this.gravityFieldSphere.rotation.y += this.shieldRotationSpeed;
+            
+            // Update position to follow player
+            this.gravityFieldSphere.position.copy(playerPosition);
+        }
+        
+        // ---- ANIMATE MAIN RING ----
+        if (this.horizontalRing) {
+            // Consistent rotation
+            this.horizontalRing.rotation.z += 0.02;
+            this.horizontalRing.position.copy(playerPosition);
+            
+            // Pulse animation
+            const ringPulse = 1.0 + 0.1 * Math.sin(time * 1.2);
+            this.horizontalRing.scale.set(ringPulse, ringPulse, ringPulse);
+        }
+        
+        // ---- ANIMATE ENERGY CORE ----
+        if (this.energyCore) {
+            // Core always follows player
+            this.energyCore.position.copy(playerPosition);
+            
+            // Simple pulse animation
+            const corePulse = 1.0 + 0.25 * Math.sin(time * 1.5);
+            this.energyCore.scale.set(corePulse, corePulse, corePulse);
+        }
+        
+        // ---- ANIMATE LIGHT ----
+        if (this.gravityFieldLight) {
+            this.gravityFieldLight.position.copy(playerPosition);
+            // Simple pulsing intensity
+            this.gravityFieldLight.intensity = 2.2 + 0.8 * Math.sin(time * 1.5);
+        }
+        
+        // Create occasional simple pulse for visual feedback
+        if (Math.random() < 0.02) {
+            this.createSimplePulseRing(playerPosition);
+        }
+        
+        // ---- ASTEROID REPULSION EFFECTS ----
+        // Apply force to each asteroid
+        for (const asteroid of allAsteroids) {
+            // Calculate direction vector from player to asteroid
+            const direction = {
+                x: asteroid.position.x - playerPosition.x,
+                y: asteroid.position.y - playerPosition.y,
+                z: asteroid.position.z - playerPosition.z
+            };
+            
+            // Calculate distance
+            const distanceSquared = 
+                direction.x * direction.x + 
+                direction.y * direction.y + 
+                direction.z * direction.z;
+            
+            // Only affect asteroids within radius
+            if (distanceSquared < effectRadius * effectRadius) {
+                // Calculate force (stronger when closer)
+                const distance = Math.sqrt(distanceSquared);
+                
+                // More dramatic close-range effect for gameplay clarity
+                let forceMagnitude;
+                if (distance < effectRadius * 0.4) {
+                    // Strong force for close asteroids
+                    forceMagnitude = baseForce * 1.8 * (1 - Math.pow(distance / (effectRadius * 0.4), 0.6));
+                } else {
+                    // Normal force with clear falloff
+                    forceMagnitude = baseForce * (1 - Math.min(1, distance / effectRadius));
+                }
+                
+                // Normalize direction
+                if (distance > 0) {
+                    direction.x /= distance;
+                    direction.y /= distance;
+                    direction.z /= distance;
+                    
+                    // Apply force by adjusting asteroid position
+                    asteroid.position.x += direction.x * forceMagnitude;
+                    asteroid.position.y += direction.y * forceMagnitude;
+                    asteroid.position.z += direction.z * forceMagnitude;
+                    
+                    // Push approaching asteroids away more aggressively
+                    if (asteroid.speed > 0 && asteroid.position.z < playerPosition.z) {
+                        asteroid.position.z -= forceMagnitude * 0.8;
+                    }
+                }
+            }
+        }
+    }
+    
+    // Simple visual pulse ring for asteroid repulsion feedback
+    createSimplePulseRing(position) {
+        // Create ring geometry
+        const ringGeometry = new THREE.RingGeometry(1, 3, 32);
+        const ringMaterial = new THREE.MeshBasicMaterial({
+            color: 0x00ffff,
+            transparent: true,
+            opacity: 0.5,
+            side: THREE.DoubleSide,
+            blending: THREE.AdditiveBlending
+        });
+        
+        // Create mesh
+        const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+        
+        // Position at player
+        ring.position.copy(position);
+        
+        // Orient toward camera
+        ring.lookAt(this.game.camera.position);
+        
+        // Add to scene
+        this.game.scene.add(ring);
+        
+        // Animate expanding ring
+        const duration = 0.8;
+        let time = 0;
+        const expandSpeed = 170;
+        
+        const animate = () => {
+            time += 0.016;
+            
+            // Expand ring
+            const scale = time * expandSpeed;
+            ring.scale.set(scale, scale, scale);
+            
+            // Simple fade out
+            const progress = time / duration;
+            ring.material.opacity = 0.5 * (1.0 - progress);
+            
+            // Keep ring oriented toward camera
+            ring.lookAt(this.game.camera.position);
+            
+            // Continue animation until complete
+            if (time < duration) {
+                requestAnimationFrame(animate);
+            } else {
+                // Clean up
+                this.game.scene.remove(ring);
+                ring.material.dispose();
+                ring.geometry.dispose();
+            }
+        };
+        
+        animate();
+    }
+
+    showGravityShiftDeactivation() {
+        const playerPosition = this.game.player.getPosition();
+        
+        // Create simple implosion effect
+        this.createSimpleImplosion(playerPosition);
+        
+        // Remove the gravity field elements with animation
+        this.removeGravityFieldWithAnimation();
+        
+        // Add screen shake for impact
+        this.game.applyScreenShake(0.2, 0.5);
+        
+        // Play deactivation sound if available
+        if (this.game.soundManager && this.game.soundManager.playSound) {
+            this.game.soundManager.playSound('powerdown', 0.5);
+        }
+    }
+    
+    createSimpleImplosion(position) {
+        // Create flash effect
+        const flashGeometry = new THREE.SphereGeometry(5, 16, 16);
+        const flashMaterial = new THREE.MeshBasicMaterial({
+            color: 0x00ffff,
+            transparent: true,
+            opacity: 0.7,
+            blending: THREE.AdditiveBlending
+        });
+        
+        const flash = new THREE.Mesh(flashGeometry, flashMaterial);
+        flash.position.copy(position);
+        this.game.scene.add(flash);
+        
+        // Animate implosion
+        const duration = 0.5;
+        let time = 0;
+        
+        const animate = () => {
+            time += 0.016;
+            const progress = time / duration;
+            
+            // Shrink flash
+            const scale = 20 * (1 - progress);
+            flash.scale.set(scale, scale, scale);
+            
+            // Fade out
+            flash.material.opacity = 0.7 * (1 - progress);
+            
+            if (time < duration) {
+                requestAnimationFrame(animate);
+            } else {
+                // Clean up
+                this.game.scene.remove(flash);
+                flash.material.dispose();
+                flash.geometry.dispose();
+            }
+        };
+        
+        animate();
+    }
+
+    removeGravityFieldWithAnimation() {
+        // Duration for animation
+        const duration = 0.8;
+        let time = 0;
+        
+        // Store references to all objects we need to remove
+        const objectsToRemove = [];
+        
+        // Add all field-related objects to the removal list
+        if (this.gravityFieldSphere) objectsToRemove.push(this.gravityFieldSphere);
+        if (this.horizontalRing) objectsToRemove.push(this.horizontalRing);
+        if (this.energyCore) objectsToRemove.push(this.energyCore);
+        
+        // Lights need special handling
+        const lightsToRemove = [];
+        if (this.gravityFieldLight) lightsToRemove.push(this.gravityFieldLight);
+        
+        // Animate the removal
+        const animate = () => {
+            time += 0.016;
+            const progress = time / duration;
+            
+            // Scale down objects
+            objectsToRemove.forEach(obj => {
+                const scale = 1.0 - progress;
+                obj.scale.set(scale, scale, scale);
+                
+                // Fade material opacity if it has one
+                if (obj.material && obj.material.opacity !== undefined) {
+                    obj.material.opacity *= (1.0 - progress * 0.5);
+                }
+            });
+            
+            // Fade out lights
+            lightsToRemove.forEach(light => {
+                light.intensity *= (1.0 - progress * 0.7);
+            });
+            
+            if (time < duration) {
+                requestAnimationFrame(animate);
+            } else {
+                // When animation completes, remove all objects from scene
+                objectsToRemove.forEach(obj => {
+                    this.game.scene.remove(obj);
+                    if (obj.material) obj.material.dispose();
+                    if (obj.geometry) obj.geometry.dispose();
+                });
+                
+                lightsToRemove.forEach(light => {
+                    this.game.scene.remove(light);
+                });
+                
+                // Clear references
+                this.gravityFieldSphere = null;
+                this.horizontalRing = null;
+                this.energyCore = null;
+                this.gravityFieldLight = null;
+            }
+        };
+        
+        animate();
+    }
+    
+    createGravityPulseWave(position) {
+        // Create ring geometry
+        const ringGeometry = new THREE.RingGeometry(1, 3, 32);
+        const ringMaterial = new THREE.MeshBasicMaterial({
+            color: 0x00ffff,
+            transparent: true,
+            opacity: 0.5,
+            side: THREE.DoubleSide,
+            blending: THREE.AdditiveBlending
+        });
+        
+        // Create mesh
+        const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+        
+        // Position at player
+        ring.position.copy(position);
+        
+        // Orient toward camera
+        ring.lookAt(this.game.camera.position);
+        
+        // Add to scene
+        this.game.scene.add(ring);
+        
+        // Animate expanding ring
+        const duration = 0.8;
+        let time = 0;
+        const expandSpeed = 170; // Faster expansion
+        
+        const animate = () => {
+            time += 0.016;
+            
+            // Expand ring
+            const scale = time * expandSpeed;
+            ring.scale.set(scale, scale, scale);
+            
+            // Simple fade out
+            const progress = time / duration;
+            ring.material.opacity = 0.5 * (1.0 - progress);
+            
+            // Keep ring oriented toward camera
+            ring.lookAt(this.game.camera.position);
+            
+            // Continue animation until complete
+            if (time < duration) {
+                requestAnimationFrame(animate);
+            } else {
+                // Clean up
+                this.game.scene.remove(ring);
+                ring.material.dispose();
+                ring.geometry.dispose();
+            }
+        };
+        
+        animate();
     }
 }
