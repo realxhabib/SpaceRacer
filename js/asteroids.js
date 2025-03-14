@@ -7,22 +7,28 @@ class AsteroidsManager {
         this.game = game;
         this.asteroids = [];
         this.asteroidModel = null;
-        this.spawnDistance = -800;               // Increased from -1500 to spawn further ahead
+        this.spawnDistance = -1600;               // CHANGED: Doubled from -800 to make asteroids appear much further away
         this.despawnDistance = 50;                // Keep the same
-        this.spawnInterval = 0.5;                 // Decreased from 0.9 to spawn much more frequently
+        this.spawnInterval = 0.5;                 // Keep the same
         this.spawnTimer = 0;
-        this.spawnCount = 5;                     // Increased from 3 to create many more asteroids at once
-        this.minSpawnX = -40;                     // Wider spawn area
-        this.maxSpawnX = 40;                      // Wider spawn area
-        this.minSpawnY = -20;                     // Wider spawn area
-        this.maxSpawnY = 20;                      // Wider spawn area
+        this.spawnCount = 5;                      // Keep the same 
+        this.minSpawnX = -40;                     // Keep the same
+        this.maxSpawnX = 40;                      // Keep the same
+        this.minSpawnY = -20;                     // Keep the same
+        this.maxSpawnY = 20;                      // Keep the same
         this.damageAmount = 10;                   // Keep the same
         this.gameTime = 0;                        // Keep the same
-        this.maxAsteroids = 300;                  // Drastically increased from 70 to allow hundreds of asteroids
+        this.maxAsteroids = 300;                  // Keep the same
         this.trackingAsteroidChance = 0.1;        // Keep the same
         this.directPathChance = 0.2;              // Keep the same
         this.distanceCheckpoints = [500, 1000, 2000, 3000, 5000, 7500, 10000]; // Keep the same
         this.lastDistanceCheckpoint = 0;          // Keep the same
+        
+        // New properties for distance-based scaling
+        this.minScaleFactor = 0.2;                // Minimum scale for very distant asteroids
+        this.maxScaleFactor = 1.0;                // Maximum scale for close asteroids
+        this.scalingStartDistance = 1500;         // Distance at which scaling begins
+        this.scalingEndDistance = 200;            // Distance at which asteroids reach full size
         
         // New properties for boundary asteroids
         this.boundaryDistance = 100;               // Distance from player at which boundary asteroids spawn
@@ -107,6 +113,9 @@ class AsteroidsManager {
                 asteroid.position.x += asteroid.lateralMovement.x * deltaTime;
                 asteroid.position.y += asteroid.lateralMovement.y * deltaTime;
             }
+            
+            // NEW: Update asteroid scale based on distance to player
+            this.updateAsteroidScale(asteroid, playerPosition);
             
             // Apply special movement patterns based on speed
             if (asteroid.speed > 35) {
@@ -477,8 +486,15 @@ class AsteroidsManager {
             asteroid.position.set(x, y, z);
             
             // Random scale with more size variation for visual interest
-            const scale = getRandomFloat(0.015, 0.055); // Increased max size
+            const scale = getRandomFloat(0.015, 0.055); // Keep original scale range
             asteroid.scale.set(scale, scale, scale);
+            
+            // NEW: Store base scale for distance-based scaling
+            asteroid.baseScale = {
+                x: scale,
+                y: scale,
+                z: scale
+            };
             
             // Random rotation speed
             asteroid.rotationSpeed = {
@@ -620,10 +636,20 @@ class AsteroidsManager {
             boundingBox.getSize(size);
             
             asteroid.hitboxSize = {
-                width: size.x * 0.8, // Slightly smaller than actual model
+                width: size.x * 0.8,
                 height: size.y * 0.8,
                 depth: size.z * 0.8
             };
+            
+            // NEW: Store base hitbox size for distance-based scaling
+            asteroid.baseHitboxSize = {
+                width: asteroid.hitboxSize.width,
+                height: asteroid.hitboxSize.height,
+                depth: asteroid.hitboxSize.depth
+            };
+            
+            // NEW: Apply initial scale based on distance
+            this.updateAsteroidScale(asteroid, playerPosition);
         }
         
         // Log when we spawn a significant number of asteroids
@@ -1129,6 +1155,13 @@ class AsteroidsManager {
             const scale = getRandomFloat(0.02, 0.06) * distanceFactor;
             asteroid.scale.set(scale, scale, scale);
             
+            // NEW: Store base scale for distance-based scaling
+            asteroid.baseScale = {
+                x: scale,
+                y: scale,
+                z: scale
+            };
+            
             // Random rotation speed
             asteroid.rotationSpeed = {
                 x: getRandomFloat(-0.6, 0.6),
@@ -1251,10 +1284,20 @@ class AsteroidsManager {
             boundingBox.getSize(size);
             
             asteroid.hitboxSize = {
-                width: size.x * 0.8, // Slightly smaller than actual model
+                width: size.x * 0.8,
                 height: size.y * 0.8,
                 depth: size.z * 0.8
             };
+            
+            // NEW: Store base hitbox size for distance-based scaling
+            asteroid.baseHitboxSize = {
+                width: asteroid.hitboxSize.width,
+                height: asteroid.hitboxSize.height,
+                depth: asteroid.hitboxSize.depth
+            };
+            
+            // NEW: Apply initial scale based on distance
+            this.updateAsteroidScale(asteroid, playerPosition);
         }
         
         // Log when we spawn a significant number of boundary asteroids
@@ -1415,6 +1458,13 @@ class AsteroidsManager {
             // Slightly smaller scale for path asteroids
             const scale = getRandomFloat(0.05, 0.2);
             asteroid.scale.set(scale, scale, scale);
+            
+            // NEW: Store base scale for distance-based scaling
+            asteroid.baseScale = {
+                x: scale,
+                y: scale,
+                z: scale
+            };
 
             // Speed scales with player speed
             asteroid.speed = getRandomFloat(15, 25) * speedFactor;
@@ -1472,6 +1522,60 @@ class AsteroidsManager {
                 width: size.x * 0.8, // Slightly smaller than actual model
                 height: size.y * 0.8,
                 depth: size.z * 0.8
+            };
+            
+            // NEW: Store base hitbox size for distance-based scaling
+            asteroid.baseHitboxSize = {
+                width: asteroid.hitboxSize.width,
+                height: asteroid.hitboxSize.height,
+                depth: asteroid.hitboxSize.depth
+            };
+            
+            // NEW: Apply initial scale based on distance
+            this.updateAsteroidScale(asteroid, playerPosition);
+        }
+    }
+
+    // NEW: Add method to update asteroid scale based on distance to player
+    updateAsteroidScale(asteroid, playerPosition) {
+        // Calculate distance to player
+        const distanceToPlayer = playerPosition.z - asteroid.position.z;
+        
+        // Skip if asteroid is behind player
+        if (distanceToPlayer < 0) return;
+        
+        // Skip if the asteroid doesn't have a base scale set
+        if (!asteroid.baseScale) return;
+        
+        // Calculate scale factor based on distance
+        let scaleFactor = 1.0;
+        
+        if (distanceToPlayer > this.scalingStartDistance) {
+            // Very far - use minimum scale
+            scaleFactor = this.minScaleFactor;
+        } else if (distanceToPlayer < this.scalingEndDistance) {
+            // Very close - use maximum scale
+            scaleFactor = this.maxScaleFactor;
+        } else {
+            // In between - linear interpolation
+            const t = 1.0 - (distanceToPlayer - this.scalingEndDistance) / 
+                           (this.scalingStartDistance - this.scalingEndDistance);
+            scaleFactor = this.minScaleFactor + t * (this.maxScaleFactor - this.minScaleFactor);
+        }
+        
+        // Apply scale factor to base scale
+        asteroid.scale.set(
+            asteroid.baseScale.x * scaleFactor,
+            asteroid.baseScale.y * scaleFactor,
+            asteroid.baseScale.z * scaleFactor
+        );
+        
+        // Update hitbox size to match current scale
+        if (asteroid.baseHitboxSize) {
+            asteroid.hitboxSize = {
+                width: asteroid.baseHitboxSize.width * scaleFactor,
+                height: asteroid.baseHitboxSize.height * scaleFactor,
+                depth: asteroid.baseHitboxSize.depth * scaleFactor
             };
         }
     }
