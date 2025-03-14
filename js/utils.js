@@ -70,37 +70,97 @@ function updateTextContent(elementId, text) {
 }
 
 // Create a particle system
-function createParticleSystem(color, size, count) {
+function createParticleSystem(color, size, count, options = {}) {
     try {
         // Validate and sanitize input parameters
         color = color || 0xffffff;
         size = isNaN(size) ? 1.0 : Math.max(0.1, Math.min(10, size)); // Limit size to reasonable values
         count = isNaN(count) ? 100 : Math.max(1, Math.min(10000, count));
         
+        // Extract optional parameters
+        const isExplosion = options.isExplosion || false;
+        const isFastAsteroid = options.isFastAsteroid || false;
+        const velocityFactor = options.velocityFactor || 1.0;
+        
         const particles = new THREE.BufferGeometry();
         const positions = [];
+        const velocities = [];
+        const colors = [];
+        
+        // Create a main color and secondary color for variation
+        const mainColor = new THREE.Color(color);
+        const secondaryColor = new THREE.Color(color).offsetHSL(0.05, 0, 0.2); // Slight hue shift and brighter
         
         // Create position array with safe values
         for (let i = 0; i < count; i++) {
-            positions.push(
-                getRandomFloat(-50, 50),
-                getRandomFloat(-50, 50),
-                getRandomFloat(-1000, 0)
-            );
+            // For explosions, use spherical distribution
+            if (isExplosion) {
+                // Use spherical coordinates for better explosion effect
+                const phi = Math.random() * Math.PI * 2;
+                const theta = Math.random() * Math.PI;
+                const r = Math.random() * (isFastAsteroid ? 8 : 5); // Bigger radius for fast asteroids
+                
+                // Convert to Cartesian coordinates
+                const x = r * Math.sin(theta) * Math.cos(phi);
+                const y = r * Math.sin(theta) * Math.sin(phi);
+                const z = r * Math.cos(theta);
+                
+                positions.push(x, y, z);
+                
+                // Add velocity data for animation
+                const speed = (0.5 + Math.random() * 0.5) * velocityFactor;
+                velocities.push(
+                    x / r * speed,
+                    y / r * speed,
+                    z / r * speed
+                );
+                
+                // Color variation
+                const ratio = Math.random();
+                const particleColor = new THREE.Color(
+                    mainColor.r * ratio + secondaryColor.r * (1 - ratio),
+                    mainColor.g * ratio + secondaryColor.g * (1 - ratio),
+                    mainColor.b * ratio + secondaryColor.b * (1 - ratio)
+                );
+                
+                colors.push(particleColor.r, particleColor.g, particleColor.b);
+            } else {
+                // Default random distribution
+                positions.push(
+                    getRandomFloat(-50, 50),
+                    getRandomFloat(-50, 50),
+                    getRandomFloat(-1000, 0)
+                );
+                
+                // Add default velocity and color
+                velocities.push(0, 0, 0);
+                colors.push(mainColor.r, mainColor.g, mainColor.b);
+            }
         }
         
         // Check if we've created valid positions
         if (positions.length === 0) {
             positions.push(0, 0, 0); // Add at least one particle at origin
+            velocities.push(0, 0, 0);
+            colors.push(mainColor.r, mainColor.g, mainColor.b);
         }
         
-        // Set the position attribute
+        // Set attributes
         particles.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        particles.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
         particles.computeBoundingSphere(); // Ensure bounding sphere is calculated
+        
+        // Store velocity data for animation
+        particles.userData = {
+            velocities: velocities,
+            isExplosion: isExplosion,
+            age: 0
+        };
         
         // Create a safe material with defaults and explicit uniform values
         const material = new THREE.PointsMaterial({
-            color: new THREE.Color(color),
+            color: new THREE.Color(0xffffff), // Use white base color
+            vertexColors: true, // Use vertex colors
             size: size,
             transparent: true,
             opacity: 0.8,
@@ -117,7 +177,7 @@ function createParticleSystem(color, size, count) {
                 material.uniforms.size = { value: size };
             }
             if (material.uniforms.color && material.uniforms.color.value === undefined) {
-                material.uniforms.color = { value: new THREE.Color(color) };
+                material.uniforms.color = { value: new THREE.Color(0xffffff) };
             }
         }
         
@@ -129,6 +189,36 @@ function createParticleSystem(color, size, count) {
         system.renderOrder = 1000; // Ensure particles render last
         system.matrixAutoUpdate = true;
         system.visible = true; // Ensure it's initially visible
+        
+        // Add animation function for explosions
+        if (isExplosion) {
+            system.update = function(deltaTime) {
+                const positions = this.geometry.attributes.position.array;
+                const velocities = this.geometry.userData.velocities;
+                
+                // Update age
+                this.geometry.userData.age += deltaTime;
+                
+                // Fade based on age
+                const normalizedAge = Math.min(this.geometry.userData.age / 1.0, 1.0);
+                this.material.opacity = 0.8 * (1.0 - normalizedAge);
+                
+                // Update positions based on velocities
+                for (let i = 0; i < positions.length; i += 3) {
+                    positions[i] += velocities[i] * deltaTime * 30;     // x
+                    positions[i+1] += velocities[i+1] * deltaTime * 30; // y
+                    positions[i+2] += velocities[i+2] * deltaTime * 30; // z
+                    
+                    // Add slight gravity effect
+                    velocities[i+1] -= 0.05 * deltaTime; // y velocity decreases over time
+                }
+                
+                // Mark position attribute as needing update
+                this.geometry.attributes.position.needsUpdate = true;
+                
+                return normalizedAge < 1.0; // Return true while animation should continue
+            };
+        }
         
         return system;
     } catch (error) {
