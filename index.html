@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Racer</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="game-container">
+        <div id="loading-screen">
+            <div class="loading-content">
+                <h1>Space Racer</h1>
+                <div class="progress-container">
+                    <div id="loading-progress"></div>
+                </div>
+                <p id="loading-text">Loading game assets...</p>
+            </div>
+        </div>
+        
+        <div id="start-screen" class="screen">
+            <h1>Space Racer</h1>
+            <h2>Choose Your Ship</h2>
+            <div class="ship-selection">
+                <div class="ship-option" id="cruiser-option">
+                    <div class="ship-preview" id="cruiser-preview"></div>
+                    <h3>Cruiser</h3>
+                    <p>Higher health, slower turning</p>
+                    <div class="ship-stats">
+                        <div>Health</div>
+                        <div class="stat-bar"><div class="stat-fill cruiser-health"></div></div>
+                        <div>Speed</div>
+                        <div class="stat-bar"><div class="stat-fill cruiser-speed"></div></div>
+                        <div>Handling</div>
+                        <div class="stat-bar"><div class="stat-fill cruiser-handling"></div></div>
+                    </div>
+                </div>
+                <div class="ship-option" id="fighter-option">
+                    <div class="ship-preview" id="fighter-preview"></div>
+                    <h3>Fighter</h3>
+                    <p>Lower health, faster turning</p>
+                    <div class="ship-stats">
+                        <div>Health</div>
+                        <div class="stat-bar"><div class="stat-fill fighter-health"></div></div>
+                        <div>Speed</div>
+                        <div class="stat-bar"><div class="stat-fill fighter-speed"></div></div>
+                        <div>Handling</div>
+                        <div class="stat-bar"><div class="stat-fill fighter-handling"></div></div>
+                    </div>
+                </div>
+            </div>
+            <button id="start-game">Start Race</button>
+        </div>
+        
+        <div id="game-ui">
+            <div id="health-container">
+                <span>Health:</span>
+                <div id="health-bar">
+                    <div id="health-fill"></div>
+                </div>
+                <span id="health-value">100</span>
+            </div>
+            <div id="speed-container">
+                <span>Speed:</span>
+                <span id="speed-value">20</span>
+            </div>
+            <div id="distance-container">
+                <span>Distance:</span>
+                <span id="distance-value">0 km</span>
+            </div>
+            <div id="ammo-container">
+                <span>Ammo:</span>
+                <span id="ammo-value">0</span>
+            </div>
+            <div id="powerup-container">
+                <div id="powerup-icon"></div>
+                <div id="powerup-timer"></div>
+            </div>
+        </div>
+        
+        <div id="game-over" class="screen">
+            <h1>Game Over</h1>
+            <div id="final-score-container">
+                <h2>Distance: <span id="final-distance">0</span></h2>
+                <h2>Time: <span id="final-time">0</span></h2>
+            </div>
+            <button id="restart-game">Play Again</button>
+        </div>
+        
+        <div id="game-canvas"></div>
+    </div>
+
+    <!-- Three.js and dependencies -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
+    
+    <!-- Game scripts -->
+    <script src="js/utils.js"></script>
+    <script src="js/textures.js"></script>
+    <script src="js/models.js"></script>
+    <script src="js/player.js"></script>
+    <script src="js/asteroids.js"></script>
+    <script src="js/powerups.js"></script>
+    <script src="js/game.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>
