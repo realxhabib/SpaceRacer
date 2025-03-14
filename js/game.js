@@ -738,6 +738,20 @@ class Game {
             }
         });
         
+        document.addEventListener('keyup', (event) => {
+            if (this.keys.hasOwnProperty(event.code)) {
+                this.keys[event.code] = false;
+                
+                // Fire bullet on space key up
+                if (event.code === 'Space') {
+                    this.player.fireBullet();
+                }
+                
+                // Prevent default for game keys
+                event.preventDefault();
+            }
+        });
+        
         // Add mouse wheel event for zooming
         document.addEventListener('wheel', (event) => {
             if (this.isRunning) {
@@ -750,6 +764,11 @@ class Game {
                 event.preventDefault();
             }
         }, { passive: false });
+        
+        // Mouse down event - activate dev mode
+        document.addEventListener('mousedown', (event) => {
+            // Mouse events for gameplay (e.g., shooting) could be added here if needed
+        });
         
         document.addEventListener('keyup', (event) => {
             if (this.keys.hasOwnProperty(event.code)) {
@@ -1012,6 +1031,7 @@ class Game {
         // Get the ship's position
         const shipPosition = this.player.mesh.position.clone();
         
+        // Standard camera behavior
         // Calculate tilt based on ship's direction
         const movementDirection = this.player.movementDirection || { x: 0, y: 0 };
         
@@ -1029,21 +1049,8 @@ class Game {
             this.updateScreenShake();
         }
         
-        // Keep the camera tilt effects for visual feedback
-        const tiltX = movementDirection.y * 0.035; // Slight tilt up/down
-        const tiltZ = -movementDirection.x * 0.05; // Slight roll during turns
-        
-        // Apply the camera rotation with smooth transitions
-        this.camera.rotation.x = lerp(this.camera.rotation.x, tiltX, 0.1);
-        this.camera.rotation.z = lerp(this.camera.rotation.z, tiltZ, 0.1);
-        
-        // Look directly at a point in front of the ship
-        const lookAtPoint = new THREE.Vector3(
-            shipPosition.x,
-            shipPosition.y,
-            shipPosition.z - 30 // Looking slightly ahead of the ship
-        );
-        this.camera.lookAt(lookAtPoint);
+        // Look at player ship
+        this.camera.lookAt(shipPosition);
     }
     
     gameOver() {
@@ -1824,6 +1831,20 @@ class Game {
         if (object.children && object.children.length > 0) {
             console.log(`${spaces}Children (${object.children.length}):`);
             object.children.forEach(child => this.logModelStructure(child, indent + 1));
+        }
+    }
+    
+    // Replace toggleDevMode with separate enable/disable methods
+    enableDevMode() {}
+    
+    disableDevMode() {}
+    
+    // Show an on-screen indicator for dev mode
+    showDevModeIndicator() {
+        // Remove existing indicator if present
+        const existingIndicator = document.getElementById('dev-mode-indicator');
+        if (existingIndicator) {
+            document.body.removeChild(existingIndicator);
         }
     }
 }

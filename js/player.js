@@ -7,15 +7,14 @@ class Player {
         this.game = game;
         this.shipType = shipType; // 'cruiser' or 'fighter'
         
-        // Ship properties based on type
         if (shipType === 'cruiser') {
             this.maxHealth = 120;
-            this.turnSpeed = 0.08; // Enhanced turning capabilities
-            this.verticalSpeed = 0.08; // Enhanced vertical movement
+            this.turnSpeed = 0.12; // INCREASED from 0.08 for more responsive turning
+            this.verticalSpeed = 0.12; // INCREASED from 0.08 for more responsive vertical movement
         } else { // fighter
             this.maxHealth = 80;
-            this.turnSpeed = 0.12; // Enhanced turning capabilities
-            this.verticalSpeed = 0.12; // Enhanced vertical movement
+            this.turnSpeed = 0.18; // INCREASED from 0.12 for more responsive turning
+            this.verticalSpeed = 0.18; // INCREASED from 0.12 for more responsive vertical movement
         }
         
         // Initialize player state
@@ -275,7 +274,7 @@ class Player {
             // Apply more subtle tilt effect with reduced angle
             // *** Keep the same tilt amount as before (-0.4) ***
             if (this.mesh) {
-                const targetRoll = -0.4; // Keep the same tilt angle as requested
+                const targetRoll = -0.5; // Keep the same tilt angle as requested
                 this.mesh.rotation.z = lerp(this.mesh.rotation.z, targetRoll, 0.15);
             }
         }
@@ -294,7 +293,7 @@ class Player {
             // Apply more subtle tilt effect with reduced angle
             // *** Keep the same tilt amount as before (0.4) ***
             if (this.mesh) {
-                const targetRoll = 0.4; // Keep the same tilt angle as requested
+                const targetRoll = 0.5; // Keep the same tilt angle as requested
                 this.mesh.rotation.z = lerp(this.mesh.rotation.z, targetRoll, 0.15);
             }
         }
@@ -685,9 +684,9 @@ class Player {
             if (horizontalKeyPressed) {
                 // Roll based on horizontal input (left/right) - with reduced tilt
                 if (this.game.keys.ArrowLeft || this.game.keys.KeyA) {
-                    targetRollAngle = -0.4; // Reduced from -0.8
+                    targetRollAngle = -0.5; // Reduced from -0.8
                 } else if (this.game.keys.ArrowRight || this.game.keys.KeyD) {
-                    targetRollAngle = 0.4; // Reduced from 0.8
+                    targetRollAngle = 0.5; // Reduced from 0.8
                 }
             } else {
                 // When no horizontal keys are pressed, use velocity with damping
@@ -719,7 +718,7 @@ class Player {
             let targetYawAngle = Math.PI;
             if (horizontalKeyPressed) {
                 // Add slight yaw twist during turns - reduced amount
-                targetYawAngle = Math.PI + (this.movementDirection.x * 0.1); // Reduced from 0.2
+                targetYawAngle = Math.PI - (this.movementDirection.x * 0.1); // Reduced from 0.2
             }
             
             const yawLerpFactor = 0.1; // Reduced from 0.15 for more gradual response

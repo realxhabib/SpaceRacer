@@ -18,7 +18,7 @@ class AsteroidsManager {
         this.maxSpawnY = 20;                      // Keep the same
         this.damageAmount = 10;                   // Keep the same
         this.gameTime = 0;                        // Keep the same
-        this.maxAsteroids = 300;                  // Keep the same
+        this.maxAsteroids = 500;                  // Keep the same
         this.trackingAsteroidChance = 0.1;        // Keep the same
         this.directPathChance = 0.2;              // Keep the same
         this.distanceCheckpoints = [500, 1000, 2000, 3000, 5000, 7500, 10000]; // Keep the same
@@ -1432,6 +1432,81 @@ class AsteroidsManager {
         // Get player movement direction for better path prediction
         const playerMovementDirection = this.game.player.movementDirection || { x: 0, y: 0 };
         
+        // NEW: Enhanced movement prediction logic
+        // Check if player is consistently moving in a direction
+        const isMovingConsistently = 
+            Math.abs(playerMovementDirection.x) > 0.3 || 
+            Math.abs(playerMovementDirection.y) > 0.3;
+        
+        // NEW: Track player position history if not already tracked
+        if (!this.playerMovementHistory) {
+            this.playerMovementHistory = [];
+        }
+        
+        // Add current direction to history
+        this.playerMovementHistory.push({
+            x: playerMovementDirection.x,
+            y: playerMovementDirection.y,
+            time: performance.now()
+        });
+        
+        // Keep last 20 movement samples (about 1/3 second at 60fps)
+        if (this.playerMovementHistory.length > 20) {
+            this.playerMovementHistory.shift();
+        }
+        
+        // NEW: Calculate consistent movement trend
+        let consistentMovementX = 0;
+        let consistentMovementY = 0;
+        let consistencyScore = 0;
+        
+        if (this.playerMovementHistory.length >= 10) {
+            // Calculate average direction over the last 10 samples
+            const recentHistory = this.playerMovementHistory.slice(-10);
+            
+            // Sum up directions
+            const sum = recentHistory.reduce((acc, item) => {
+                return { x: acc.x + item.x, y: acc.y + item.y };
+            }, { x: 0, y: 0 });
+            
+            // Calculate averages
+            const avgX = sum.x / recentHistory.length;
+            const avgY = sum.y / recentHistory.length;
+            
+            // Calculate consistency (how similar are all the recent directions)
+            let totalVariance = 0;
+            recentHistory.forEach(item => {
+                totalVariance += Math.pow(item.x - avgX, 2) + Math.pow(item.y - avgY, 2);
+            });
+            
+            // Lower variance means more consistent direction
+            const variance = totalVariance / recentHistory.length;
+            consistencyScore = Math.max(0, 1 - variance);
+            
+            // If consistent enough, use the average direction
+            if (consistencyScore > 0.6) {
+                consistentMovementX = avgX;
+                consistentMovementY = avgY;
+            }
+        }
+        
+        // Use enhanced movement prediction if we have consistent movement
+        let predictedX, predictedY;
+        let enhancedPrediction = false;
+        
+        if (consistencyScore > 0.6 && (Math.abs(consistentMovementX) > 0.2 || Math.abs(consistentMovementY) > 0.2)) {
+            // Calculate prediction factor based on consistency and movement magnitude
+            const directionMagnitude = Math.sqrt(consistentMovementX * consistentMovementX + consistentMovementY * consistentMovementY);
+            // NEW: Incorporate player speed into the prediction factor - faster speed = longer prediction
+            const predictionFactor = consistencyScore * directionMagnitude * 3.0 * Math.max(1.0, speedFactor * 1.5);
+            
+            // Predict future position - stronger prediction based on consistency and speed
+            // NEW: Make the prediction distance scale with player speed
+            predictedX = playerPosition.x + (consistentMovementX * predictionFactor * 60);
+            predictedY = playerPosition.y + (consistentMovementY * predictionFactor * 30);
+            enhancedPrediction = true;
+        }
+        
         for (let i = 0; i < spawnCount; i++) {
             let asteroid;
 
@@ -1443,23 +1518,56 @@ class AsteroidsManager {
                 asteroid.visible = true;
             }
 
-            // Position directly in player's path with WIDER spread (increased from -10,10 to -18,18 for x and -5,5 to -12,12 for y)
-            const directionBias = 0.7; // How much to bias toward player's movement direction
-            const x = playerPosition.x + 
-                      (playerMovementDirection.x * directionBias * 20) + 
-                      getRandomFloat(-350, 350); // Much wider spread: from -35,35 to -45,45
-            const y = playerPosition.y + 
-                      (playerMovementDirection.y * directionBias * 10) + 
-                      getRandomFloat(-350, 350); // Much wider spread: from -25,25 to -35,35
-            const z = playerPosition.z + spawnDistance;
+            // Position asteroids
+            let x, y, z;
+            
+            if (enhancedPrediction) {
+                // Enhanced prediction: Position along the predicted future path with some variation
+                // CHANGED: Use a wider corridor along the predicted path that scales with speed
+                // Faster speed = wider path to account for increased difficulty in precise control
+                const basePathWidth = 250; // Increased from 150 to make the path wider
+                const speedAdjustedWidth = basePathWidth * Math.max(1.0, speedFactor * 1.2);
+                
+                // Calculate spawn position biased strongly toward predicted path
+                x = predictedX + getRandomFloat(-speedAdjustedWidth, speedAdjustedWidth);
+                y = predictedY + getRandomFloat(-speedAdjustedWidth, speedAdjustedWidth);
+                
+                // Add some randomized variation based on distance from player and speed
+                // Further asteroids can have more variation
+                const distanceFactor = Math.random() * 0.8;
+                // NEW: Scale variation with player speed
+                const speedVariationFactor = Math.max(1.0, speedFactor * 1.3);
+                x += consistentMovementX * distanceFactor * 50 * speedVariationFactor;
+                y += consistentMovementY * distanceFactor * 30 * speedVariationFactor;
+                
+                // NEW: Create a denser pattern in the player's immediate predicted path when moving fast
+                if (speedFactor > 1.2 && Math.random() < 0.4) {
+                    // 40% chance to place asteroid closer to the exact predicted path
+                    x = predictedX + getRandomFloat(-basePathWidth * 0.4, basePathWidth * 0.4);
+                    y = predictedY + getRandomFloat(-basePathWidth * 0.4, basePathWidth * 0.4);
+                }
+            } else {
+                // Regular positioning for when player is not moving consistently
+                // Use wider distribution for more coverage
+                const directionBias = 0.7; // How much to bias toward player's movement direction
+                x = playerPosition.x + 
+                  (playerMovementDirection.x * directionBias * 20) + 
+                  getRandomFloat(-350, 350);
+                y = playerPosition.y + 
+                  (playerMovementDirection.y * directionBias * 10) + 
+                  getRandomFloat(-350, 350);
+            }
+            
+            z = playerPosition.z + spawnDistance;
 
             asteroid.position.set(x, y, z);
 
+            // Rest of the existing code
             // Slightly smaller scale for path asteroids
             const scale = getRandomFloat(0.05, 0.2);
             asteroid.scale.set(scale, scale, scale);
             
-            // NEW: Store base scale for distance-based scaling
+            // Store base scale for distance-based scaling
             asteroid.baseScale = {
                 x: scale,
                 y: scale,
